@@ -79,5 +79,6 @@ for pal_file in pal_dir.glob("*.lua"):
     if not "init" in pal_file.name:
         colors = load_catppuccin_palette(pal_file)
         distances = compute_palette_distances(colors)
+        distances["palette"] = pal_file.stem
         out_file = pal_file.with_suffix(".csv")
         distances.to_csv(out_file, index=False)

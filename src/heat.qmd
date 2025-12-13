@@ -1,0 +1,41 @@
+---
+title: "Cap Dist Heatmap"
+format: html
+---
+
+This document visualizes data/interim/cap_dist.csv as a heatmap using ggplot2, faceted by the palette column.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+
+# read data
+df <- readr::read_csv("../data/interim/cap_dist.csv")
+
+# ensure consistent ordering of factor levels across facets
+all_elements <- df %>% pull(element1) %>% unique() %>% c(df %>% pull(element2) %>% unique()) %>% unique()
+
+df <- df %>%
+  mutate(
+    element1 = factor(element1, levels = all_elements),
+    element2 = factor(element2, levels = all_elements)
+  )
+
+# basic heatmap
+p <- ggplot(df, aes(x = element1, y = element2, fill = distance)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(name = "Distance") +
+  facet_wrap(~ palette, ncol = 2) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  ) +
+  labs(x = NULL, y = NULL)
+
+print(p)
+
+```
