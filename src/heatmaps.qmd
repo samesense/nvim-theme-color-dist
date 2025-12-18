@@ -6,7 +6,8 @@ execute:
 ---
 
 ```{r}
-# Setup: install packages if missing
+
+
 if (!requireNamespace("ComplexHeatmap", quietly=TRUE)) {
   if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager")
   BiocManager::install("ComplexHeatmap")
@@ -17,9 +18,15 @@ for (p in pkgs) if (!requireNamespace(p, quietly=TRUE)) install.packages(p)
 library(tidyverse)
 library(ComplexHeatmap)
 library(circlize)
+library(grid)
 ```
 
-```{r echo=FALSE, results='asis'}
+```{r plot}
+#| echo: false
+#| fig-height: 15
+#| fig-width: 30
+#| results: asis
+
 pal_dir <- "data/raw/nvim/lua/catppuccin/palettes"
 csvs <- list.files(pal_dir, pattern = "\\.csv$", full.names = TRUE)
 if (length(csvs) == 0) stop("No CSV palette distance files found in ", pal_dir)
@@ -29,27 +36,93 @@ for (f in csvs) {
   name <- tools::file_path_sans_ext(basename(f))
   cat(sprintf("## Palette: %s\n\n", name))
 
-  elems <- unique(c(df$element1, df$element2))
-  mat <- matrix(0, nrow = length(elems), ncol = length(elems), dimnames = list(elems, elems))
+  # ---- read palette lua ----
+  lua_path <- file.path(pal_dir, paste0(name, ".lua"))
+  pal_colors <- character(0)
+
+  if (file.exists(lua_path)) {
+    txt <- paste(readLines(lua_path, warn = FALSE), collapse = "\n")
+    m <- stringr::str_match_all(
+      txt,
+      '(\\w+)\\s*=\\s*"(#(?:[0-9a-fA-F]{6}))"'
+    )[[1]]
+
+    if (nrow(m) > 0) {
+      pal_colors <- setNames(tolower(m[, 3]), m[, 2])
+    }
+  }
+
+  # ---- element order (palette-first) ----
+  all_elems <- unique(c(df$element1, df$element2))
+
+  if (length(pal_colors) > 0) {
+    elems <- c(
+      names(pal_colors)[names(pal_colors) %in% all_elems],
+      setdiff(all_elems, names(pal_colors))
+    )
+  } else {
+    elems <- all_elems
+  }
+
+  # ---- build symmetric distance matrix ----
+  mat <- matrix(
+    NA_real_,
+    nrow = length(elems),
+    ncol = length(elems),
+    dimnames = list(elems, elems)
+  )
 
   for (i in seq_len(nrow(df))) {
-    a <- df$element1[i]; b <- df$element2[i]; d <- df$distance[i]
-    mat[a, b] <- d; mat[b, a] <- d
+    a <- df$element1[i]
+    b <- df$element2[i]
+    d <- df$distance[i]
+    mat[a, b] <- d
+    mat[b, a] <- d
   }
+
   diag(mat) <- 0
 
-  maxd <- max(mat, na.rm = TRUE)
-  col_fun <- colorRamp2(c(0, maxd * 0.5, maxd), c("white", "orange", "red"))
+  # ord is your definitive order
+ord <- elems
+mat <- mat[ord, ord, drop = FALSE]
+
+# named vector: element -> hex
+mat_colors <- setNames(rep("#D3D3D3", length(ord)), ord)
+common <- intersect(names(pal_colors), ord)
+mat_colors[common] <- pal_colors[common]
+
+ann_vals <- ord  # character vector
+
+ha_row <- rowAnnotation(
+  Color = anno_simple(
+    ann_vals,
+    col = mat_colors,
+    border = FALSE
+  ),
+  width = unit(6, "mm")
+)
+
+ha_col <- HeatmapAnnotation(
+  Color = anno_simple(
+    ann_vals,
+    col = mat_colors,
+    border = FALSE
+  ),
+  height = unit(6, "mm")
+)
 
   ht <- Heatmap(mat,
-                name = "CIELAB \u0394E",
+                name = "Color Dist",
                 col = col_fun,
                 show_row_names = TRUE,
                 show_column_names = TRUE,
-                cluster_rows = TRUE,
-                cluster_columns = TRUE,
-                column_title = name)
+                cluster_rows = FALSE,
+                cluster_columns = FALSE,
+                column_title = name,
+                left_annotation = ha_row,
+                top_annotation = ha_col)
 
   draw(ht, heatmap_legend_side = "right")
 }
+
 ```
