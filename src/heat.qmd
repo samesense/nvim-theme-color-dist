@@ -1,0 +1,117 @@
+---
+title: "Cap Dist Heatmap"
+format: html
+---
+
+This document visualizes data/interim/cap_dist.csv as a heatmap using ggplot2, faceted by the palette column.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(ggtext)
+
+label_classes <- tribble(
+  ~element,      ~class,
+  "rosewater",   "accent",
+  "flamingo",    "accent",
+  "pink",        "accent",
+  "mauve",       "accent",
+  "red",         "accent",
+  "maroon",      "accent",
+  "peach",       "accent",
+  "yellow",      "accent",
+  "green",       "accent",
+  "teal",        "accent",
+  "sky",         "accent",
+  "sapphire",    "accent",
+  "blue",        "accent",
+  "lavender",    "accent",
+
+  "text",        "text",
+  "subtext1",    "text",
+  "subtext0",    "text",
+
+  "overlay2",    "overlay",
+  "overlay1",    "overlay",
+  "overlay0",    "overlay",
+
+  "surface2",    "surface",
+  "surface1",    "surface",
+  "surface0",    "surface",
+
+  "base",        "base",
+  "mantle",      "base",
+  "crust",       "base"
+)
+
+df <- readr::read_csv("data/interim/cap_dist.csv", show_col_types = FALSE)
+
+df_plot <- df |>
+  group_by(palette) |>
+  mutate(
+    # derive order from appearance in the file
+    element_levels = list(unique(c(element1, element2))),
+    element1 = factor(element1, levels = element_levels[[1]]),
+    element2 = factor(element2, levels = element_levels[[1]])
+  ) |>
+  ungroup()
+
+df_plot <- df_plot |>
+  left_join(label_classes, by = c("element1" = "element")) |>
+  rename(class_y = class) |>
+  left_join(label_classes, by = c("element2" = "element")) |>
+  rename(class_x = class)
+
+label_colors <- c(
+  accent  = "#7c7f93",   # muted purple-gray
+  text    = "#4c4f69",   # strong neutral
+  overlay = "#6c6f85",
+  surface = "#8c8fa1",
+  base    = "#9ca0b0"
+)
+
+x_labels <- df_plot |>
+  distinct(element2, class_x) |>
+  mutate(
+    label = sprintf(
+      "<span style='color:%s'>%s</span>",
+      label_colors[class_x],
+      element2
+    )
+  )
+
+y_labels <- df_plot |>
+  distinct(element1, class_y) |>
+  mutate(
+    label = sprintf(
+      "<span style='color:%s'>%s</span>",
+      label_colors[class_y],
+      element1
+    )
+  )
+
+x_lab_vec <- setNames(x_labels$label, x_labels$element2)
+y_lab_vec <- setNames(y_labels$label, y_labels$element1)
+
+ggplot(df_plot, aes(x = element2, y = element1, fill = distance)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(
+    name = "Perceptual distance (ΔE)",
+    option = "viridis"
+  ) +
+  facet_wrap(~ palette, ncol = 2, scales = "free") +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_markdown(angle = 45, hjust = 1, size = 9),
+    axis.text.y = element_markdown(size = 9),
+    panel.grid = element_blank(),
+    strip.text = element_text(face = "bold")
+  ) +
+  labs(x = NULL, y = NULL) + 
+  scale_x_discrete(labels = x_lab_vec) + 
+  scale_y_discrete(labels = y_lab_vec)
+
+```

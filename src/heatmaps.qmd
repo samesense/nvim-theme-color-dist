@@ -1,0 +1,202 @@
+---
+title: "CIELAB Distance Heatmaps"
+format: html
+execute:
+  echo: true
+---
+
+```{r}
+
+
+if (!requireNamespace("ComplexHeatmap", quietly=TRUE)) {
+  if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager")
+  BiocManager::install("ComplexHeatmap")
+}
+pkgs <- c("circlize", "tidyverse")
+for (p in pkgs) if (!requireNamespace(p, quietly=TRUE)) install.packages(p)
+
+library(tidyverse)
+library(ComplexHeatmap)
+library(circlize)
+library(grid)
+```
+
+```{r plot}
+#| echo: false
+#| fig-height: 15
+#| fig-width: 30
+#| results: asis
+
+pal_dir <- "data/raw/nvim/lua/catppuccin/palettes"
+csvs <- list.files(pal_dir, pattern = "\\.csv$", full.names = TRUE)
+if (length(csvs) == 0) stop("No CSV palette distance files found in ", pal_dir)
+
+for (f in csvs) {
+  df <- readr::read_csv(f, show_col_types = FALSE)
+  name <- tools::file_path_sans_ext(basename(f))
+  cat(sprintf("## Palette: %s\n\n", name))
+
+  # ---- read palette lua ----
+  lua_path <- file.path(pal_dir, paste0(name, ".lua"))
+  pal_colors <- character(0)
+
+  if (file.exists(lua_path)) {
+    txt <- paste(readLines(lua_path, warn = FALSE), collapse = "\n")
+    m <- stringr::str_match_all(
+      txt,
+      '(\\w+)\\s*=\\s*"(#(?:[0-9a-fA-F]{6}))"'
+    )[[1]]
+
+    if (nrow(m) > 0) {
+      pal_colors <- setNames(tolower(m[, 3]), m[, 2])
+    }
+  }
+
+  # ---- element order (palette-first) ----
+  all_elems <- unique(c(df$element1, df$element2))
+
+  if (length(pal_colors) > 0) {
+    elems <- c(
+      names(pal_colors)[names(pal_colors) %in% all_elems],
+      setdiff(all_elems, names(pal_colors))
+    )
+  } else {
+    elems <- all_elems
+  }
+
+  # ---- build symmetric distance matrix ----
+  mat <- matrix(
+    NA_real_,
+    nrow = length(elems),
+    ncol = length(elems),
+    dimnames = list(elems, elems)
+  )
+
+  for (i in seq_len(nrow(df))) {
+    a <- df$element1[i]
+    b <- df$element2[i]
+    d <- df$distance[i]
+    mat[a, b] <- d
+    mat[b, a] <- d
+  }
+
+  diag(mat) <- 0
+
+  # ord is your definitive order
+ord <- elems
+mat <- mat[ord, ord, drop = FALSE]
+
+# named vector: element -> hex
+mat_colors <- setNames(rep("#D3D3D3", length(ord)), ord)
+common <- intersect(names(pal_colors), ord)
+mat_colors[common] <- pal_colors[common]
+
+ann_vals <- ord  # character vector
+
+ha_row <- rowAnnotation(
+  Color = anno_simple(
+    ann_vals,
+    col = mat_colors,
+    border = FALSE
+  ),
+  width = unit(6, "mm")
+)
+
+ha_col <- HeatmapAnnotation(
+  Color = anno_simple(
+    ann_vals,
+    col = mat_colors,
+    border = FALSE
+  ),
+  height = unit(6, "mm")
+)
+
+  # color mapping for heatmap
+  maxd <- max(mat, na.rm = TRUE)
+  col_fun <- colorRamp2(c(0, maxd * 0.5, maxd), c("white", "orange", "red"))
+
+  ht <- Heatmap(mat,
+                name = "Color Dist",
+                col = col_fun,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                cluster_rows = TRUE,
+                cluster_columns = TRUE,
+                column_title = name,
+                left_annotation = ha_row,
+                top_annotation = ha_col)
+
+  draw(ht, heatmap_legend_side = "right")
+}
+
+# --- combined 2x2 facet-like plot ---
+target <- c("latte", "frappe", "macchiato", "mocha")
+files_map <- setNames(csvs, tools::file_path_sans_ext(basename(csvs)))
+sel_files <- vapply(target, function(n) if (n %in% names(files_map)) files_map[[n]] else NA_character_, FUN.VALUE = "")
+sel_files <- sel_files[!is.na(sel_files)]
+
+#png("combined_heatmaps.pdf", width = 12, height = 8)
+if (length(sel_files) > 0) {
+  build_ht <- function(f, show_legend = FALSE) {
+    df <- readr::read_csv(f, show_col_types = FALSE)
+    name <- tools::file_path_sans_ext(basename(f))
+
+    # read palette lua
+    lua_path <- file.path(pal_dir, paste0(name, ".lua"))
+    pal_colors <- character(0)
+    if (file.exists(lua_path)) {
+      txt <- paste(readLines(lua_path, warn = FALSE), collapse = "\n")
+      m <- stringr::str_match_all(txt, '(\\w+)\\s*=\\s*"(#(?:[0-9a-fA-F]{6}))"')[[1]]
+      if (nrow(m) > 0) pal_colors <- setNames(tolower(m[, 3]), m[, 2])
+    }
+
+    all_elems <- unique(c(df$element1, df$element2))
+    if (length(pal_colors) > 0) {
+      elems <- c(names(pal_colors)[names(pal_colors) %in% all_elems], setdiff(all_elems, names(pal_colors)))
+    } else elems <- all_elems
+
+    mat <- matrix(NA_real_, nrow = length(elems), ncol = length(elems), dimnames = list(elems, elems))
+    for (i in seq_len(nrow(df))) {
+      a <- df$element1[i]; b <- df$element2[i]; d <- df$distance[i]
+      if (a %in% elems && b %in% elems) { mat[a, b] <- d; mat[b, a] <- d }
+    }
+    diag(mat) <- 0
+
+    ord <- elems
+    mat <- mat[ord, ord, drop = FALSE]
+
+    mat_colors <- setNames(rep("#D3D3D3", length(ord)), ord)
+    common <- intersect(names(pal_colors), ord)
+    mat_colors[common] <- pal_colors[common]
+
+    ann_vals <- ord
+    ha_row <- rowAnnotation(Color = anno_simple(ann_vals, col = mat_colors, border = FALSE), width = unit(6, "mm"))
+    ha_col <- HeatmapAnnotation(Color = anno_simple(ann_vals, col = mat_colors, border = FALSE), height = unit(6, "mm"))
+
+    maxd <- max(mat, na.rm = TRUE)
+    mid <- maxd / 2
+    col_fun <- colorRamp2(
+    c(0, mid, maxd),
+    c("#2166ac", "white", "#b2182b")
+  )
+
+    Heatmap(mat, name = "Color Dist", col = col_fun, show_row_names = TRUE, show_column_names = TRUE, cluster_rows = TRUE, cluster_columns = TRUE, column_title = name, left_annotation = ha_row, top_annotation = ha_col, show_heatmap_legend = show_legend)
+  }
+
+  hts <- lapply(sel_files, build_ht, show_legend = FALSE)
+
+  grid.newpage()
+  pushViewport(viewport(layout = grid.layout(2, 2)))
+  for (i in seq_along(hts)) {
+    row <- ((i - 1) %/% 2) + 1
+    col <- ((i - 1) %% 2) + 1
+    pushViewport(viewport(layout.pos.row = row, layout.pos.col = col))
+    draw(hts[[i]], newpage = FALSE)
+    upViewport()
+  }
+  upViewport()
+}
+#dev.off()
+
+
+```
