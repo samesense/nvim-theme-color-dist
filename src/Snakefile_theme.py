@@ -32,20 +32,16 @@ rule assign_roles:
             --palette {params.palette}
         """
 
-# # -------------------------
-# # Step 3: Assign concrete Catppuccin elements
-# # -------------------------
-#
-# rule assign_elements:
-#     input:
-#         colors=f"{OUT}_colors.csv",
-#         assignment="results/role_assignment.csv"
-#     output:
-#         theme=f"{OUT}_theme.csv"
-#     shell:
-#         """
-#         python scripts/assign_elements.py \
-#             {input.colors} \
-#             {input.assignment} \
-#             --out {output.theme}
-#         """
+rule assign_elements:
+    input:
+        colors = INT / "tmp/{img}_colors.csv",
+        assignment= INT / "tmp/{img}_role_assignment.csv"
+    output:
+        theme= END / "{img}_theme.csv"
+    shell:
+        """
+        python assign_elements.py \
+            {input.colors} \
+            {input.assignment} \
+            --out {output.theme}
+        """
