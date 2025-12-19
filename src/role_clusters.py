@@ -5,9 +5,51 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from PIL import Image
+from rich.console import Console
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
 from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 from scipy.spatial.distance import pdist
 from skimage.color import rgb2lab
+
+
+def rgb_to_hex(rgb):
+    r, g, b = map(int, rgb)
+    return "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+
+def render_role_strips(df, sort_by="frequency"):
+    """
+    df must contain:
+      R, G, B, L, role
+    """
+    N = 80
+
+    console = Console()
+    table = Table(show_header=True, header_style="bold")
+
+    table.add_column("Role", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Colors", justify="left")
+
+    for role_id in sorted(df["role"].unique()):
+        sub = df[df["role"] == role_id]
+
+        # sort colors inside role
+        if sort_by == "L":
+            sub = sub.sort_values("L")
+        elif sort_by == "frequency" and "frequency" in sub.columns:
+            sub = sub.sort_values("frequency", ascending=False)
+
+        strip = Text()
+        for _, row in sub.iterrows():
+            hex_color = rgb_to_hex((row.R, row.G, row.B))
+            w = max(1, int(row.frequency * 300))
+            strip.append("  " * w, style=Style(bgcolor=hex_color))
+
+        table.add_row(f"Role {role_id}", strip)
+
+    console.print(table)
 
 
 def load_image_colors(path, max_pixels=100_000):
@@ -32,6 +74,9 @@ def extract_theme(image_path, roles, max_pixels, out_prefix):
     """
 
     rgb = load_image_colors(image_path, max_pixels=max_pixels)
+    q = 8  # try 4, 8, 16
+    rgb = (rgb // q) * q
+    rgb = rgb.astype(np.uint8)
 
     # filter to colors that comprise >5% of sampled pixels
     total_pixels = len(rgb)
@@ -95,10 +140,20 @@ def extract_theme(image_path, roles, max_pixels, out_prefix):
 
     click.echo(f"🌈 Dendrogram saved → {dendro_path}")
 
-    click.echo("✅ Phase 1 complete.")
-    click.echo(
-        "Next steps: role summaries, distance constraints, representative selection."
+    df = pd.DataFrame(
+        {
+            "R": rgb_use[:, 0],
+            "G": rgb_use[:, 1],
+            "B": rgb_use[:, 2],
+            "L": lab[:, 0],  # ✅ correct
+            "a": lab[:, 1],
+            "b": lab[:, 2],
+            "role": labels,
+            "frequency": freqs_use,
+        }
     )
+
+    render_role_strips(df, sort_by="L")
 
 
 if __name__ == "__main__":
