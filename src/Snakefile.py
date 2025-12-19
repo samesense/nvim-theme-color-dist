@@ -1,4 +1,11 @@
 include: "Snakefile_const.py"
+include: "Snakefile_theme.py"
 
-#rule all:
-#    input:
+#IMAGE = "images/blue_mosque_ceil.jpeg"
+PALETTE = "mocha"
+CATPPUCCIN_DIST = "catppuccin/mocha.csv"
+IMGS = ('abstractBoxes',)
+
+rule all:
+    input:
+        expand(INT / "tmp/{img}_role_assignment.csv", img=IMGS),

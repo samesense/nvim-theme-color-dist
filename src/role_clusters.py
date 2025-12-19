@@ -32,7 +32,9 @@ def render_role_strips(df, sort_by="frequency"):
     table.add_column("Role", justify="right", style="cyan", no_wrap=True)
     table.add_column("Colors", justify="left")
 
-    for role_id in sorted(df["role"].unique()):
+    role_order = df.groupby("role")["L"].mean().sort_values().index
+
+    for role_id in role_order:
         sub = df[df["role"] == role_id]
 
         # sort colors inside role
@@ -44,7 +46,7 @@ def render_role_strips(df, sort_by="frequency"):
         strip = Text()
         for _, row in sub.iterrows():
             hex_color = rgb_to_hex((row.R, row.G, row.B))
-            w = max(1, int(row.frequency * 300))
+            w = min(40, max(1, int(row.frequency * 300)))
             strip.append("  " * w, style=Style(bgcolor=hex_color))
 
         table.add_row(f"Role {role_id}", strip)
@@ -67,66 +69,41 @@ def load_image_colors(path, max_pixels=100_000):
 @click.argument("image_path", type=click.Path(exists=True))
 @click.option("-k", "--roles", default=6, help="Number of color roles")
 @click.option("--max-pixels", default=100_000, help="Max pixels to sample")
+@click.option("--quant", default=8, help="RGB quantization level")
 @click.option("--out-prefix", default="theme", help="Output prefix")
-def extract_theme(image_path, roles, max_pixels, out_prefix):
+def extract_theme(image_path, roles, max_pixels, quant, out_prefix):
     """
     Extract color roles from a painting and visualize them as a dendrogram.
     """
 
     rgb = load_image_colors(image_path, max_pixels=max_pixels)
-    q = 8  # try 4, 8, 16
+    q = quant  # try 4, 8, 16
     rgb = (rgb // q) * q
     rgb = rgb.astype(np.uint8)
 
-    # filter to colors that comprise >5% of sampled pixels
+    # filter to colors that comprise >X% of sampled pixels
     total_pixels = len(rgb)
     uniques, counts = np.unique(rgb, axis=0, return_counts=True)
     freqs = counts / total_pixels
     mask = freqs > 0.0001
     if np.any(mask):
         rgb_use = uniques[mask]
-        counts_use = counts[mask]
         freqs_use = freqs[mask]
-        click.echo(
-            f"🔢 Using {len(rgb_use)} colors (each >1% of pixels) for clustering..."
-        )
+        click.echo(f"🔢 Using {len(rgb_use)} colors for clustering...")
     else:
         rgb_use = rgb
-        click.echo(
-            "⚠️ No single color exceeds 1% — using all sampled pixels for clustering..."
-        )
+        click.echo("⚠️ No single color exceeds % cutoff.")
         sys.exit(1)
 
-    click.echo("🔬 Converting RGB → CIELAB...")
     lab = rgb2lab(rgb_use[np.newaxis, :, :] / 255.0)[0]
 
-    click.echo("🌳 Computing hierarchical clustering...")
     dists = pdist(lab, metric="euclidean")
     Z = linkage(dists, method="average")
-
-    click.echo("✂️ Cutting dendrogram into roles...")
     labels = fcluster(Z, t=roles, criterion="maxclust")
 
-    # Save clustered colors
-    df = pd.DataFrame(
-        {
-            "R": rgb_use[:, 0],
-            "G": rgb_use[:, 1],
-            "B": rgb_use[:, 2],
-            "L": rgb_use[:, 0],
-            "a": rgb_use[:, 1],
-            "b": rgb_use[:, 2],
-            "role": labels,
-            "frequency": freqs_use,
-        }
-    )
-
     csv_path = f"{out_prefix}_colors.csv"
-    df.to_csv(csv_path, index=False)
     click.echo(f"💾 Saved clustered colors → {csv_path}")
 
-    # Plot dendrogram (milestone artifact)
-    click.echo("🖼️ Rendering dendrogram...")
     plt.figure(figsize=(14, 6))
     dendrogram(Z, truncate_mode="lastp", p=roles * 3, show_leaf_counts=True)
     plt.title("Color Role Dendrogram (CIELAB space)")
@@ -154,6 +131,7 @@ def extract_theme(image_path, roles, max_pixels, out_prefix):
     )
 
     render_role_strips(df, sort_by="L")
+    df.to_csv(csv_path, index=False)
 
 
 if __name__ == "__main__":
