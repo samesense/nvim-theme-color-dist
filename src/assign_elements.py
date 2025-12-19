@@ -1,17 +1,27 @@
 import click
-import numpy as np
 import pandas as pd
 
 CATPPUCCIN_ELEMENTS = {
-    "background": ["crust", "mantle", "base"],
-    "surface": ["surface0", "surface1", "surface2"],
-    "overlay": ["overlay0", "overlay1", "overlay2"],
-    "text": ["text", "subtext1", "subtext0"],
-    "accent_cool": ["blue", "sky", "sapphire", "lavender"],
+    "accent_red": ["rosewater", "flamingo", "pink", "red", "maroon"],
     "accent_warm": ["peach", "yellow", "green"],
-    "accent_red": ["red", "maroon", "pink", "rosewater", "flamingo"],
+    "accent_cool": ["teal", "sky", "sapphire", "blue", "lavender"],
     "accent_bridge": ["mauve"],
+    "text": ["text", "subtext1", "subtext0"],
+    "overlay": ["overlay2", "overlay1", "overlay0"],
+    "surface": ["surface2", "surface1", "surface0"],
+    "background": ["base", "mantle", "crust"],
 }
+
+ROLE_ORDER = [
+    "accent_red",
+    "accent_warm",
+    "accent_cool",
+    "accent_bridge",
+    "text",
+    "overlay",
+    "surface",
+    "background",
+]
 
 
 def rgb_to_hex(r, g, b):
@@ -21,10 +31,14 @@ def rgb_to_hex(r, g, b):
 @click.command()
 @click.argument("image_colors_csv", type=click.Path(exists=True))
 @click.argument("role_assignment_csv", type=click.Path(exists=True))
-@click.option("--out", default="theme_elements.csv")
-def assign_elements(image_colors_csv, role_assignment_csv, out):
+@click.option("--out-csv", default="theme_elements.csv", show_default=True)
+@click.option("--out-lua", default="theme.lua", show_default=True)
+@click.option("--theme-name", default="painting_light", show_default=True)
+def assign_elements(
+    image_colors_csv, role_assignment_csv, out_csv, out_lua, theme_name
+):
     """
-    Assign concrete Catppuccin elements to colors.
+    Assign concrete Catppuccin elements to colors and emit a Lua theme file.
     """
 
     colors = pd.read_csv(image_colors_csv)
@@ -40,22 +54,24 @@ def assign_elements(image_colors_csv, role_assignment_csv, out):
 
     assignments = []
 
-    for cat_role, elems in CATPPUCCIN_ELEMENTS.items():
+    for cat_role in ROLE_ORDER:
+        elems = CATPPUCCIN_ELEMENTS.get(cat_role)
+        if not elems:
+            continue
+
         sub = df[df.assigned_catppuccin_role == cat_role]
         if sub.empty:
             continue
 
-        # sort by lightness (most Catppuccin roles rely on this)
-        sub = sub.sort_values("L")
-
-        if cat_role.startswith(("background", "surface", "overlay", "text")):
-            # monotonic assignment
-            picks = sub.head(len(elems))
-
+        # ordering logic
+        if cat_role in {"background", "surface", "overlay", "text"}:
+            # darker → lighter
+            sub = sub.sort_values("L")
         else:
-            # accents: prefer frequency + spread
+            # accents: prefer dominance
             sub = sub.sort_values("frequency", ascending=False)
-            picks = sub.head(len(elems))
+
+        picks = sub.head(len(elems))
 
         for elem, (_, row) in zip(elems, picks.iterrows()):
             assignments.append(
@@ -67,10 +83,31 @@ def assign_elements(image_colors_csv, role_assignment_csv, out):
             )
 
     out_df = pd.DataFrame(assignments)
-    out_df.to_csv(out, index=False)
 
-    print("\nAssigned Catppuccin elements:\n")
+    # ---- write CSV ----
+    out_df.to_csv(out_csv, index=False)
+    print(f"\n✔ Wrote CSV → {out_csv}\n")
     print(out_df)
+
+    # ---- write Lua ----
+    with open(out_lua, "w") as f:
+        f.write(f"local {theme_name} = {{\n")
+
+        for cat_role in ROLE_ORDER:
+            elems = CATPPUCCIN_ELEMENTS.get(cat_role, [])
+            for elem in elems:
+                row = out_df[out_df.element == elem]
+                if row.empty:
+                    continue
+                hexval = row.iloc[0].hex
+                f.write(f"  {elem} = '{hexval}',\n")
+
+            f.write("\n")
+
+        f.write("}\n\n")
+        f.write(f"return {theme_name}\n")
+
+    print(f"\n✔ Wrote Lua theme → {out_lua}\n")
 
 
 if __name__ == "__main__":

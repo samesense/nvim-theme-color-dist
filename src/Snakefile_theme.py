@@ -37,11 +37,16 @@ rule assign_elements:
         colors = INT / "tmp/{img}_colors.csv",
         assignment= INT / "tmp/{img}_role_assignment.csv"
     output:
-        theme= END / "{img}_theme.csv"
+        csvout = END / "{img}_theme.csv",
+        luaout = END / "{img}_theme.lua",
+    params:
+        tname = "{img}_theme",
     shell:
         """
         python assign_elements.py \
             {input.colors} \
             {input.assignment} \
-            --out {output.theme}
+            --out-csv {output.csvout} \
+            --out-lua {output.luaout} \
+            --theme-name {params.tname}
         """

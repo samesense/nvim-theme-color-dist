@@ -8,4 +8,4 @@ IMGS = ('abstractBoxes',)
 
 rule all:
     input:
-        expand(END / "{img}_theme.csv", img=IMGS),
+        expand(END / "{img}_theme.lua", img=IMGS),
