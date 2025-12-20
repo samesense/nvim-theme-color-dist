@@ -33,13 +33,16 @@ ROLE_ORDER = [
 STRUCTURAL_ROLES = ["background", "surface", "overlay", "text"]
 ACCENT_ROLES = ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]
 
+MIN_TEXT_BG_DELTA = 35.0
+
+
 # ============================================================
 # Geometry helpers
 # ============================================================
 
 
 def lab(row):
-    return np.array([row.L, row.a, row.b])
+    return np.array([row["L"], row["a"], row["b"]])
 
 
 def delta_e(a, b):
@@ -47,9 +50,6 @@ def delta_e(a, b):
 
 
 def build_catppuccin_element_distances(df):
-    """
-    {(elem1, elem2): ΔE}
-    """
     dist = {}
     for _, r in df.iterrows():
         a, b = sorted([r.element1, r.element2])
@@ -58,66 +58,57 @@ def build_catppuccin_element_distances(df):
 
 
 def infer_element_slots(cat_dist, elements):
-    """
-    Infer relative ordering of elements (dark → light)
-    using Catppuccin ΔE geometry.
-    """
     if len(elements) == 1:
         return elements
 
-    names = elements
-    mat = np.zeros((len(names), len(names)))
+    n = len(elements)
+    mat = np.zeros((n, n))
 
-    for i, a in enumerate(names):
-        for j, b in enumerate(names):
-            if i == j:
-                continue
-            mat[i, j] = cat_dist.get(tuple(sorted([a, b])), 0.0)
+    for i, a in enumerate(elements):
+        for j, b in enumerate(elements):
+            if i != j:
+                mat[i, j] = cat_dist.get(tuple(sorted([a, b])), 0.0)
 
-    eigvals, eigvecs = np.linalg.eig(mat)
-    axis = eigvecs[:, np.argmax(eigvals.real)].real
+    vals, vecs = np.linalg.eig(mat)
+    axis = vecs[:, np.argmax(vals.real)].real
     order = np.argsort(axis)
 
-    return [names[i] for i in order]
+    return [elements[i] for i in order]
+
+
+# ============================================================
+# Readability scoring
+# ============================================================
 
 
 def readability_score(assignments):
-    """
-    Higher = better readability.
-    Returns -inf if required elements are missing.
-    """
-    REQUIRED = ["base", "surface1", "overlay1", "text"]
-
-    for k in REQUIRED:
+    required = ["base", "surface1", "overlay1", "text"]
+    for k in required:
         if k not in assignments:
             return -np.inf
 
     base = assignments["base"]
     text = assignments["text"]
 
-    score = abs(text.L - base.L) * 2
+    delta = abs(text["L"] - base["L"])
+    score = delta * 2
 
-    chain = [
-        ("base", "surface1"),
-        ("surface1", "overlay1"),
-        ("overlay1", "text"),
-    ]
-
+    chain = [("base", "surface1"), ("surface1", "overlay1"), ("overlay1", "text")]
     for a, b in chain:
-        score += abs(assignments[b].L - assignments[a].L)
+        score += abs(assignments[b]["L"] - assignments[a]["L"])
 
-    delta = abs(text.L - base.L)
-    # Soft penalty instead of rejection
-    if delta < 35:
-        score -= (35 - delta) * 4
+    if delta < MIN_TEXT_BG_DELTA:
+        score -= (MIN_TEXT_BG_DELTA - delta) * 4
 
     return score
 
 
+# ============================================================
+# Structural assignment (bounded, safe)
+# ============================================================
+
+
 def assign_structural_joint(df, cat_dist):
-    """
-    Jointly assign background, surface, overlay, text.
-    """
     role_dfs = {
         r: df[df.assigned_catppuccin_role == r].sort_values("L").reset_index(drop=True)
         for r in STRUCTURAL_ROLES
@@ -128,53 +119,32 @@ def assign_structural_joint(df, cat_dist):
         for r in STRUCTURAL_ROLES
     }
 
-    # Candidate indices (evenly spaced, small search)
-    idxs = {}
+    # pick up to 5 candidates per role (prevents explosion)
+    candidates = {}
     for r, rdf in role_dfs.items():
         if len(rdf) < len(slot_map[r]):
             return None
-        idxs[r] = np.linspace(0, len(rdf) - 1, len(slot_map[r])).round().astype(int)
+        step = max(1, len(rdf) // 5)
+        candidates[r] = rdf.iloc[::step].head(5)
 
     best = None
     best_score = -np.inf
 
-    for bg_idxs in itertools.product(idxs["background"], repeat=1):
-        bg_rows = role_dfs["background"].iloc[list(bg_idxs)]
-
-        for txt_idxs in itertools.product(idxs["text"], repeat=1):
-            txt_rows = role_dfs["text"].iloc[list(txt_idxs)]
-
-            # Early reject
-            if abs(txt_rows.iloc[0].L - bg_rows.iloc[0].L) < 35:
+    for bg in candidates["background"].itertuples(index=False):
+        for txt in candidates["text"].itertuples(index=False):
+            if abs(txt.L - bg.L) < MIN_TEXT_BG_DELTA:
                 continue
 
-            for surf_idxs in itertools.product(idxs["surface"], repeat=1):
-                surf_rows = role_dfs["surface"].iloc[list(surf_idxs)]
-
-                for ov_idxs in itertools.product(idxs["overlay"], repeat=1):
-                    ov_rows = role_dfs["overlay"].iloc[list(ov_idxs)]
-
+            for surf in candidates["surface"].itertuples(index=False):
+                for ov in candidates["overlay"].itertuples(index=False):
                     trial = {}
 
-                    valid = True
-                    for role, rows in [
-                        ("background", bg_rows),
-                        ("surface", surf_rows),
-                        ("overlay", ov_rows),
-                        ("text", txt_rows),
-                    ]:
-                        slots = slot_map[role]
-                        if len(rows) < len(slots):
-                            valid = False
-                            break
-
-                        trial.update(dict(zip(slots, rows.itertuples())))
-
-                    if not valid:
-                        continue
+                    trial.update(dict(zip(slot_map["background"], [bg])))
+                    trial.update(dict(zip(slot_map["text"], [txt])))
+                    trial.update(dict(zip(slot_map["surface"], [surf])))
+                    trial.update(dict(zip(slot_map["overlay"], [ov])))
 
                     score = readability_score(trial)
-
                     if score > best_score:
                         best_score = score
                         best = trial
@@ -183,20 +153,58 @@ def assign_structural_joint(df, cat_dist):
 
 
 # ============================================================
-# Accent assignment (AFTER structure)
+# Fallback synthesis (deterministic, safe)
 # ============================================================
 
 
-def assign_accents(df, cat_dist, assignments):
+def synthesize(a, b, alpha):
+    return {
+        "L": a["L"] * (1 - alpha) + b["L"] * alpha,
+        "a": a["a"] * (1 - alpha) + b["a"] * alpha,
+        "b": a["b"] * (1 - alpha) + b["b"] * alpha,
+        "R": int(a["R"] * (1 - alpha) + b["R"] * alpha),
+        "G": int(a["G"] * (1 - alpha) + b["G"] * alpha),
+        "B": int(a["B"] * (1 - alpha) + b["B"] * alpha),
+    }
+
+
+def derive_structural_fallback(df):
+    bg = (
+        df[df.assigned_catppuccin_role == "background"]
+        .sort_values("L")
+        .iloc[1]
+        .to_dict()
+    )
+
+    txt = df[df.assigned_catppuccin_role == "text"].sort_values("L").iloc[-1].to_dict()
+
+    if abs(txt["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
+        txt = synthesize(bg, txt, 0.85)
+
+    surface = synthesize(bg, txt, 0.35)
+    overlay = synthesize(bg, txt, 0.6)
+
+    return {
+        "base": bg,
+        "surface1": surface,
+        "overlay1": overlay,
+        "text": txt,
+    }
+
+
+# ============================================================
+# Accent assignment (after structure)
+# ============================================================
+
+
+def assign_accents(df, assignments):
     for role in ACCENT_ROLES:
         role_df = df[df.assigned_catppuccin_role == role]
         if role_df.empty:
             continue
 
-        slots = infer_element_slots(cat_dist, CATPPUCCIN_ELEMENTS[role])
-
-        role_df = role_df.sort_values("frequency", ascending=False)
-        role_df = role_df.head(40)
+        slots = CATPPUCCIN_ELEMENTS[role]
+        role_df = role_df.sort_values("frequency", ascending=False).head(40)
 
         if len(role_df) < len(slots):
             continue
@@ -204,12 +212,11 @@ def assign_accents(df, cat_dist, assignments):
         best = None
         best_score = -np.inf
 
-        for rows in itertools.combinations(role_df.itertuples(), len(slots)):
+        for rows in itertools.combinations(role_df.to_dict("records"), len(slots)):
             score = 0.0
             for a, b in itertools.combinations(rows, 2):
                 score += delta_e(a, b)
 
-            # Penalize accents close to text/background
             for r in rows:
                 score -= 0.3 * delta_e(r, assignments["text"])
                 score -= 0.2 * delta_e(r, assignments["base"])
@@ -224,6 +231,11 @@ def assign_accents(df, cat_dist, assignments):
     return assignments
 
 
+# ============================================================
+# CLI
+# ============================================================
+
+
 @click.command()
 @click.argument("image_colors_csv", type=click.Path(exists=True))
 @click.argument("role_assignment_csv", type=click.Path(exists=True))
@@ -231,17 +243,10 @@ def assign_accents(df, cat_dist, assignments):
 @click.option("--out-lua", default="theme.lua")
 @click.option("--theme-name", default="painting_light")
 def assign_elements(
-    image_colors_csv,
-    role_assignment_csv,
-    catppuccin_distances_csv,
-    out_lua,
-    theme_name,
+    image_colors_csv, role_assignment_csv, catppuccin_distances_csv, out_lua, theme_name
 ):
     colors = pd.read_csv(image_colors_csv)
     roles = pd.read_csv(role_assignment_csv)
-    cat = pd.read_csv(catppuccin_distances_csv)
-
-    cat_dist = build_catppuccin_element_distances(cat)
 
     df = colors.merge(
         roles,
@@ -250,29 +255,23 @@ def assign_elements(
         how="inner",
     )
 
-    assignments = assign_structural_joint(df, cat_dist)
+    assignments = assign_structural_joint(df, None)
     if assignments is None:
-        best = assignments
-        # raise RuntimeError("No readable structural theme found")
+        print("⚠️ No readable structural theme found — using fallback synthesis")
+        assignments = derive_structural_fallback(df)
 
-    assignments = assign_accents(df, cat_dist, assignments)
-
-    # --------------------------------------------------------
-    # Write Lua
-    # --------------------------------------------------------
+    assignments = assign_accents(df, assignments)
 
     with open(out_lua, "w") as f:
         f.write(f"local {theme_name} = {{\n")
         for role in ROLE_ORDER:
             for elem in CATPPUCCIN_ELEMENTS[role]:
                 row = assignments.get(elem)
-                if row is None:
-                    continue
-                f.write(
-                    f"  {elem} = '#{int(row.R):02x}{int(row.G):02x}{int(row.B):02x}',\n"
-                )
-        f.write("}\n\n")
-        f.write(f"return {theme_name}\n")
+                if row:
+                    f.write(
+                        f"  {elem} = '#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}',\n"
+                    )
+        f.write("}\n\nreturn " + theme_name + "\n")
 
 
 if __name__ == "__main__":

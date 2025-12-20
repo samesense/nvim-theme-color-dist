@@ -47,22 +47,17 @@ def render_role_strips(df, sort_by="frequency"):
         for _, row in sub.iterrows():
             hex_color = rgb_to_hex((row.R, row.G, row.B))
             w = min(40, max(1, int(row.frequency * 300)))
-            strip.append("  " * w, style=Style(bgcolor=hex_color))
+            strip.append(" " * w, style=Style(bgcolor=hex_color))
 
-        table.add_row(f"Role {role_id}", strip)
+        # show number of colors in each cluster
+        table.add_row(f"Role {role_id} ({len(sub)} colors)", strip)
 
     console.print(table)
 
 
-def load_image_colors(path, max_pixels=100_000):
+def load_image_colors(path, max_pixels=None):
     img = Image.open(path).convert("RGB")
-    arr = np.asarray(img).reshape(-1, 3)
-
-    if len(arr) > max_pixels:
-        idx = np.random.choice(len(arr), max_pixels, replace=False)
-        arr = arr[idx]
-
-    return arr
+    return np.asarray(img).reshape(-1, 3)
 
 
 @click.command()
@@ -76,7 +71,7 @@ def extract_theme(image_path, roles, max_pixels, quant, out_prefix):
     Extract color roles from a painting and visualize them as a dendrogram.
     """
 
-    rgb = load_image_colors(image_path, max_pixels=max_pixels)
+    rgb = load_image_colors(image_path)
     q = quant  # try 4, 8, 16
     rgb = (rgb // q) * q
     rgb = rgb.astype(np.uint8)
@@ -85,7 +80,7 @@ def extract_theme(image_path, roles, max_pixels, quant, out_prefix):
     total_pixels = len(rgb)
     uniques, counts = np.unique(rgb, axis=0, return_counts=True)
     freqs = counts / total_pixels
-    mask = freqs > 0.0001
+    mask = counts >= 10  # absolute pixel count
     if np.any(mask):
         rgb_use = uniques[mask]
         freqs_use = freqs[mask]

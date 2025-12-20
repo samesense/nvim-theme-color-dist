@@ -3,6 +3,10 @@ import itertools
 import click
 import numpy as np
 import pandas as pd
+from rich.console import Console
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
 
 # ============================================================
 # Catppuccin role definitions
@@ -19,8 +23,6 @@ CATPPUCCIN_ROLES = [
     "accent_bridge",
 ]
 
-# Expected relative lightness ordering (lower = darker)
-# Accents are intentionally unconstrained
 ROLE_LIGHTNESS_RANK = {
     "background": 0,
     "surface": 1,
@@ -28,6 +30,17 @@ ROLE_LIGHTNESS_RANK = {
     "text": 3,
 }
 
+# Higher = more permissive
+ROLE_FLEXIBILITY = {
+    "background": 0.0,
+    "surface": 0.2,
+    "overlay": 0.4,
+    "text": 0.6,
+    "accent_bridge": 0.8,
+    "accent_red": 1.0,
+    "accent_warm": 1.0,
+    "accent_cool": 1.0,
+}
 
 # ============================================================
 # Utilities
@@ -35,9 +48,6 @@ ROLE_LIGHTNESS_RANK = {
 
 
 def build_role_distance_matrix(df):
-    """
-    Build {(role1, role2): distance} symmetric matrix
-    """
     mat = {}
     for _, r in df.iterrows():
         a, b = sorted([r.role1, r.role2])
@@ -46,131 +56,132 @@ def build_role_distance_matrix(df):
 
 
 def image_role_centroids(img_df):
-    """
-    Compute CIELAB centroid per image role
-    """
     return img_df.groupby("role")[["L", "a", "b"]].mean().to_dict("index")
 
 
 def image_lightness_rank(centroids):
-    """
-    Rank image roles by increasing lightness (darkest = 0)
-    """
-    Ls = {r: v["L"] for r, v in centroids.items()}
-    ordered = sorted(Ls, key=Ls.get)
+    ordered = sorted(centroids, key=lambda r: centroids[r]["L"])
     return {r: i for i, r in enumerate(ordered)}
 
 
 def matrix_mismatch(image_mat, cat_mat, mapping):
-    """
-    Mean absolute ΔE mismatch under a proposed mapping
-    """
-    err = 0.0
-    n = 0
-
+    err, n = 0.0, 0
     for (i1, i2), d_img in image_mat.items():
-        c1 = mapping[i1]
-        c2 = mapping[i2]
+        c1, c2 = mapping[i1], mapping[i2]
         key = tuple(sorted([c1, c2]))
-
-        if key not in cat_mat:
-            continue
-
-        err += abs(d_img - cat_mat[key])
-        n += 1
-
+        if key in cat_mat:
+            err += abs(d_img - cat_mat[key])
+            n += 1
     return err / max(n, 1)
 
 
-def extreme_dark_penalty(image_rank, mapping):
-    """
-    Penalize mapping the *absolute* darkest image role to background
-    """
-    darkest = min(image_rank, key=image_rank.get)
-    if mapping[darkest] == "background":
-        return 2.0
-    return 0.0
-
-
 def ordering_penalty(image_rank, mapping):
-    """
-    Penalize violations of relative lightness ordering
-    """
-    penalty = 0.0
+    p = 0.0
+    for r1, r2 in itertools.combinations(image_rank, 2):
+        if mapping[r1] in ROLE_LIGHTNESS_RANK and mapping[r2] in ROLE_LIGHTNESS_RANK:
+            img = image_rank[r1] - image_rank[r2]
+            cat = ROLE_LIGHTNESS_RANK[mapping[r1]] - ROLE_LIGHTNESS_RANK[mapping[r2]]
+            if img * cat < 0:
+                p += 1
+    return p
 
-    for r1, r2 in itertools.combinations(image_rank.keys(), 2):
-        img_order = image_rank[r1] - image_rank[r2]
 
-        c1 = mapping[r1]
-        c2 = mapping[r2]
-
-        if c1 in ROLE_LIGHTNESS_RANK and c2 in ROLE_LIGHTNESS_RANK:
-            cat_order = ROLE_LIGHTNESS_RANK[c1] - ROLE_LIGHTNESS_RANK[c2]
-
-            # Sign disagreement = ordering violation
-            if img_order * cat_order < 0:
-                penalty += 1.0
-
-    return penalty
+def flexibility_penalty(image_rank, mapping):
+    return sum(
+        (1.0 - ROLE_FLEXIBILITY[mapping[r]]) * image_rank[r] for r in mapping
+    ) / len(mapping)
 
 
 def confidence_from_scores(best, second):
-    """
-    Interpretable confidence ∈ [0, 1]
-    """
-    if second <= 0:
-        return 1.0
-    return max(0.0, 1.0 - best / second)
+    return 1.0 if second <= 0 else max(0.0, 1.0 - best / second)
 
 
 # ============================================================
-# Main script
+# Color pruning (NEW)
+# ============================================================
+
+
+def prune_colors_by_role(df):
+    """
+    Remove colors that violate basic role expectations.
+    Conservative by design.
+    """
+    kept = []
+
+    for role, sub in df.groupby("assigned_catppuccin_role"):
+        if role in {"background", "surface", "overlay"}:
+            lo, hi = sub.L.quantile([0.15, 0.85])
+            kept.append(sub[(sub.L >= lo) & (sub.L <= hi)])
+
+        elif role == "text":
+            hi = sub.L.quantile(0.75)
+            kept.append(sub[sub.L >= hi])
+
+        else:
+            # accents: keep most frequent + diverse
+            kept.append(sub.sort_values("frequency", ascending=False).head(40))
+
+    return pd.concat(kept, ignore_index=True)
+
+
+# ============================================================
+# Rich visualization
+# ============================================================
+
+
+def render_role_strips(df, title):
+    console = Console()
+    table = Table(title=title, show_header=True, header_style="bold")
+
+    table.add_column("Role", style="cyan", no_wrap=True)
+    table.add_column("Count", justify="right")
+    table.add_column("Colors")
+
+    role_order = df.groupby("assigned_catppuccin_role")["L"].mean().sort_values().index
+
+    for role in role_order:
+        sub = df[df.assigned_catppuccin_role == role].sort_values("L")
+        strip = Text()
+
+        for _, r in sub.iterrows():
+            hex_color = f"#{int(r.R):02x}{int(r.G):02x}{int(r.B):02x}"
+            w = min(40, max(1, int(r.frequency * 300)))
+            strip.append(" " * w, style=Style(bgcolor=hex_color))
+
+        table.add_row(role, str(len(sub)), strip)
+
+    console.print(table)
+
+
+# ============================================================
+# Main
 # ============================================================
 
 
 @click.command()
 @click.argument("image_colors_csv", type=click.Path(exists=True))
 @click.argument("catppuccin_distances_csv", type=click.Path(exists=True))
-@click.argument("out_csv", type=click.Path(exists=False))
-@click.option("--palette", default="mocha", help="Catppuccin palette name")
+@click.argument("out_csv", type=click.Path())
+@click.option("--palette", default="mocha")
 def assign_roles(image_colors_csv, catppuccin_distances_csv, out_csv, palette):
-    """
-    Assign perceptual image roles to Catppuccin roles
-    using semantic constraints + ΔE geometry.
-    """
-
-    # --------------------------------------------------------
-    # Load image role centroids
-    # --------------------------------------------------------
     img = pd.read_csv(image_colors_csv)
     centroids = image_role_centroids(img)
-    image_roles = sorted(centroids.keys())
-
+    image_roles = sorted(centroids)
     image_rank = image_lightness_rank(centroids)
 
-    # Dark cluster logic: background = median of darkest K
-    DARK_CLUSTER_SIZE = 3
-    dark_roles = sorted(image_rank, key=image_rank.get)[:DARK_CLUSTER_SIZE]
-    background_candidate = dark_roles[DARK_CLUSTER_SIZE // 2]
-
-    # Compute image role–role distances
+    # image role distances
     img_rows = []
     for r1, r2 in itertools.combinations(image_roles, 2):
         v1 = np.array(list(centroids[r1].values()))
         v2 = np.array(list(centroids[r2].values()))
-        d = np.linalg.norm(v1 - v2)
-        img_rows.append({"role1": r1, "role2": r2, "distance": d})
-
+        img_rows.append({"role1": r1, "role2": r2, "distance": np.linalg.norm(v1 - v2)})
     img_mat = build_role_distance_matrix(pd.DataFrame(img_rows))
 
-    # --------------------------------------------------------
-    # Load Catppuccin role distances
-    # --------------------------------------------------------
+    # catppuccin role distances
     cat = pd.read_csv(catppuccin_distances_csv)
     cat = cat[cat.palette == palette]
 
-    # Map elements → roles
-    CATPPUCCIN_ROLE_MAP = {
+    ROLE_MAP = {
         "crust": "background",
         "mantle": "background",
         "base": "background",
@@ -198,63 +209,44 @@ def assign_roles(image_colors_csv, catppuccin_distances_csv, out_csv, palette):
         "mauve": "accent_bridge",
     }
 
-    cat["role1"] = cat.element1.map(CATPPUCCIN_ROLE_MAP)
-    cat["role2"] = cat.element2.map(CATPPUCCIN_ROLE_MAP)
+    cat["role1"] = cat.element1.map(ROLE_MAP)
+    cat["role2"] = cat.element2.map(ROLE_MAP)
     cat = cat.dropna(subset=["role1", "role2"])
 
-    cat_role_dists = cat.groupby(["role1", "role2"]).distance.mean().reset_index()
+    cat_mat = build_role_distance_matrix(
+        cat.groupby(["role1", "role2"]).distance.mean().reset_index()
+    )
 
-    cat_mat = build_role_distance_matrix(cat_role_dists)
-
-    # --------------------------------------------------------
-    # Search assignments
-    # --------------------------------------------------------
     results = []
-
     for perm in itertools.permutations(CATPPUCCIN_ROLES, len(image_roles)):
         mapping = dict(zip(image_roles, perm))
 
-        # HARD constraint: background must be median dark role
-        if mapping[background_candidate] != "background":
+        if ordering_penalty(image_rank, mapping) > 2:
             continue
 
-        geom = matrix_mismatch(img_mat, cat_mat, mapping)
-        order_pen = ordering_penalty(image_rank, mapping)
-        extreme_pen = extreme_dark_penalty(image_rank, mapping)
-
-        score = geom + 1.5 * order_pen + 0.5 * extreme_pen
+        score = (
+            matrix_mismatch(img_mat, cat_mat, mapping)
+            + ordering_penalty(image_rank, mapping)
+            + flexibility_penalty(image_rank, mapping)
+        )
         results.append((mapping, score))
 
-    results.sort(key=lambda x: x[1])
+    best_map, best_score = sorted(results, key=lambda x: x[1])[0]
+    second = sorted(results, key=lambda x: x[1])[1][1]
+    confidence = confidence_from_scores(best_score, second)
 
-    if not results:
-        raise RuntimeError("No valid role assignments found.")
+    assigned = img.copy()
+    assigned["assigned_catppuccin_role"] = assigned.role.map(best_map)
 
-    best_map, best_score = results[0]
-    second_score = results[1][1] if len(results) > 1 else best_score
+    render_role_strips(assigned, "Assigned roles (raw)")
 
-    confidence = confidence_from_scores(best_score, second_score)
+    pruned = prune_colors_by_role(assigned)
 
-    # --------------------------------------------------------
-    # Output
-    # --------------------------------------------------------
-    out = pd.DataFrame(
-        [
-            {
-                "image_role": k,
-                "assigned_catppuccin_role": v,
-                "confidence": confidence,
-            }
-            for k, v in best_map.items()
-        ]
-    ).sort_values("image_role")
+    render_role_strips(pruned, "Assigned roles (pruned)")
 
-    out.to_csv(out_csv, index=False)
+    pruned.to_csv(out_csv, index=False)
 
-    print("\nBest role assignment:\n")
-    print(out)
-    print(f"\nMean score: {best_score:.2f}")
-    print(f"Confidence: {confidence:.3f}")
+    print(f"\nConfidence: {confidence:.3f}")
 
 
 if __name__ == "__main__":
