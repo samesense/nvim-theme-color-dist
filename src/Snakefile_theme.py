@@ -35,9 +35,9 @@ rule assign_roles:
 rule assign_elements:
     input:
         colors = INT / "tmp/{img}_colors.csv",
-        assignment= INT / "tmp/{img}_role_assignment.csv"
+        assignment = INT / "tmp/{img}_role_assignment.csv",
+        catppuccin = RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
     output:
-        csvout = END / "{img}_theme.csv",
         luaout = END / "{img}_theme.lua",
     params:
         tname = "{img}_theme",
@@ -46,7 +46,7 @@ rule assign_elements:
         python assign_elements.py \
             {input.colors} \
             {input.assignment} \
-            --out-csv {output.csvout} \
+            {input.catppuccin} \
             --out-lua {output.luaout} \
             --theme-name {params.tname}
         """

@@ -3,3 +3,6 @@ data/interim/
 .local/
 src/heat.html
 src/heat_files/
+src/.snakemake/
+src/__pycache__/
+data/processed/
