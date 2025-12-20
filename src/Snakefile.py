@@ -4,7 +4,7 @@ include: "Snakefile_theme.py"
 #IMAGE = "images/blue_mosque_ceil.jpeg"
 PALETTE = "mocha"
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"
-IMGS = ('abstractBoxes',)
+IMGS = ('abstractBoxes', 'blueMosqueCeil',)
 
 rule all:
     input:

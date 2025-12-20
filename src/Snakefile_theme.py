@@ -10,8 +10,8 @@ rule extract_roles:
         num_roles = 8,
     shell:
         """
-        python role_clusters.py {input} \
-            --roles {params.num_roles} \
+        python role_clusters.py {input} \n
+            --roles {params.num_roles} \n
             --out-prefix {params.out_prefix}
         """
 

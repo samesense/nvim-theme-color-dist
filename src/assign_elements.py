@@ -30,6 +30,13 @@ ROLE_ORDER = [
     "background",
 ]
 
+STRUCTURAL_ROLES = ["background", "surface", "overlay", "text"]
+ACCENT_ROLES = ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]
+
+# ============================================================
+# Geometry helpers
+# ============================================================
+
 
 def lab(row):
     return np.array([row.L, row.a, row.b])
@@ -50,20 +57,14 @@ def build_catppuccin_element_distances(df):
     return dist
 
 
-# ============================================================
-# Element geometry inference (NEW)
-# ============================================================
-
-
 def infer_element_slots(cat_dist, elements):
     """
-    Infer relative ordering of elements using Catppuccin geometry.
-    Returns ordered list of elements from darkest → lightest.
+    Infer relative ordering of elements (dark → light)
+    using Catppuccin ΔE geometry.
     """
     if len(elements) == 1:
         return elements
 
-    # Build pairwise distance matrix
     names = elements
     mat = np.zeros((len(names), len(names)))
 
@@ -71,86 +72,156 @@ def infer_element_slots(cat_dist, elements):
         for j, b in enumerate(names):
             if i == j:
                 continue
-            mat[i, j] = cat_dist.get(tuple(sorted([a, b])), 0)
+            mat[i, j] = cat_dist.get(tuple(sorted([a, b])), 0.0)
 
-    # Use first principal axis as ordering proxy
     eigvals, eigvecs = np.linalg.eig(mat)
     axis = eigvecs[:, np.argmax(eigvals.real)].real
-
     order = np.argsort(axis)
+
     return [names[i] for i in order]
-
-
-# ============================================================
-# Assignment logic
-# ============================================================
-
-
-def assign_structural(role_df, slots):
-    """
-    Assign colors to structural slots preserving lightness order.
-    """
-    role_df = role_df.sort_values("L").reset_index(drop=True)
-
-    if len(role_df) < len(slots):
-        return None
-
-    idxs = np.linspace(0, len(role_df) - 1, len(slots)).round().astype(int)
-    return dict(zip(slots, role_df.iloc[idxs].itertuples()))
-
-
-def assign_accents(role_df, slots):
-    """
-    Assign accents jointly by frequency + separation.
-    """
-    role_df = role_df.sort_values("frequency", ascending=False)
-
-    # Prefilter: keep only the top-N most frequent candidates to avoid
-    # combinatorial explosion when searching combinations.
-    TOP_N_CANDIDATES = 40
-    if len(role_df) > TOP_N_CANDIDATES:
-        role_df = role_df.head(TOP_N_CANDIDATES)
-
-    if len(role_df) < len(slots):
-        return None
-
-    best = None
-    best_score = -np.inf
-
-    for rows in itertools.combinations(role_df.itertuples(), len(slots)):
-        score = 0
-        for a, b in itertools.combinations(rows, 2):
-            score += delta_e(a, b)
-        if score > best_score:
-            best_score = score
-            best = rows
-
-    return dict(zip(slots, best))
-
-
-# ============================================================
-# Global readability score
-# ============================================================
 
 
 def readability_score(assignments):
     """
-    Higher = better
+    Higher = better readability.
+    Returns -inf if required elements are missing.
     """
+    REQUIRED = ["base", "surface1", "overlay1", "text"]
+
+    for k in REQUIRED:
+        if k not in assignments:
+            return -np.inf
+
     base = assignments["base"]
     text = assignments["text"]
 
     score = abs(text.L - base.L) * 2
 
-    for a, b in [("base", "surface1"), ("surface1", "overlay1"), ("overlay1", "text")]:
-        if a in assignments and b in assignments:
-            score += abs(assignments[b].L - assignments[a].L)
+    chain = [
+        ("base", "surface1"),
+        ("surface1", "overlay1"),
+        ("overlay1", "text"),
+    ]
 
-    # Hard penalties
-    if abs(text.L - base.L) < 35:
-        score -= 100
+    for a, b in chain:
+        score += abs(assignments[b].L - assignments[a].L)
+
+    delta = abs(text.L - base.L)
+    # Soft penalty instead of rejection
+    if delta < 35:
+        score -= (35 - delta) * 4
 
     return score
+
+
+def assign_structural_joint(df, cat_dist):
+    """
+    Jointly assign background, surface, overlay, text.
+    """
+    role_dfs = {
+        r: df[df.assigned_catppuccin_role == r].sort_values("L").reset_index(drop=True)
+        for r in STRUCTURAL_ROLES
+    }
+
+    slot_map = {
+        r: infer_element_slots(cat_dist, CATPPUCCIN_ELEMENTS[r])
+        for r in STRUCTURAL_ROLES
+    }
+
+    # Candidate indices (evenly spaced, small search)
+    idxs = {}
+    for r, rdf in role_dfs.items():
+        if len(rdf) < len(slot_map[r]):
+            return None
+        idxs[r] = np.linspace(0, len(rdf) - 1, len(slot_map[r])).round().astype(int)
+
+    best = None
+    best_score = -np.inf
+
+    for bg_idxs in itertools.product(idxs["background"], repeat=1):
+        bg_rows = role_dfs["background"].iloc[list(bg_idxs)]
+
+        for txt_idxs in itertools.product(idxs["text"], repeat=1):
+            txt_rows = role_dfs["text"].iloc[list(txt_idxs)]
+
+            # Early reject
+            if abs(txt_rows.iloc[0].L - bg_rows.iloc[0].L) < 35:
+                continue
+
+            for surf_idxs in itertools.product(idxs["surface"], repeat=1):
+                surf_rows = role_dfs["surface"].iloc[list(surf_idxs)]
+
+                for ov_idxs in itertools.product(idxs["overlay"], repeat=1):
+                    ov_rows = role_dfs["overlay"].iloc[list(ov_idxs)]
+
+                    trial = {}
+
+                    valid = True
+                    for role, rows in [
+                        ("background", bg_rows),
+                        ("surface", surf_rows),
+                        ("overlay", ov_rows),
+                        ("text", txt_rows),
+                    ]:
+                        slots = slot_map[role]
+                        if len(rows) < len(slots):
+                            valid = False
+                            break
+
+                        trial.update(dict(zip(slots, rows.itertuples())))
+
+                    if not valid:
+                        continue
+
+                    score = readability_score(trial)
+
+                    if score > best_score:
+                        best_score = score
+                        best = trial
+
+    return best
+
+
+# ============================================================
+# Accent assignment (AFTER structure)
+# ============================================================
+
+
+def assign_accents(df, cat_dist, assignments):
+    for role in ACCENT_ROLES:
+        role_df = df[df.assigned_catppuccin_role == role]
+        if role_df.empty:
+            continue
+
+        slots = infer_element_slots(cat_dist, CATPPUCCIN_ELEMENTS[role])
+
+        role_df = role_df.sort_values("frequency", ascending=False)
+        role_df = role_df.head(40)
+
+        if len(role_df) < len(slots):
+            continue
+
+        best = None
+        best_score = -np.inf
+
+        for rows in itertools.combinations(role_df.itertuples(), len(slots)):
+            score = 0.0
+            for a, b in itertools.combinations(rows, 2):
+                score += delta_e(a, b)
+
+            # Penalize accents close to text/background
+            for r in rows:
+                score -= 0.3 * delta_e(r, assignments["text"])
+                score -= 0.2 * delta_e(r, assignments["base"])
+
+            if score > best_score:
+                best_score = score
+                best = rows
+
+        if best:
+            assignments.update(dict(zip(slots, best)))
+
+    return assignments
 
 
 @click.command()
@@ -179,30 +250,12 @@ def assign_elements(
         how="inner",
     )
 
-    best = None
-    best_score = -np.inf
+    assignments = assign_structural_joint(df, cat_dist)
+    if assignments is None:
+        best = assignments
+        # raise RuntimeError("No readable structural theme found")
 
-    assignments = {}
-
-    for role, elements in CATPPUCCIN_ELEMENTS.items():
-        print("here", role)
-        role_df = df[df.assigned_catppuccin_role == role]
-        slots = infer_element_slots(cat_dist, elements)
-
-        if role in {"background", "surface", "overlay", "text"}:
-            part = assign_structural(role_df, slots)
-        else:
-            part = assign_accents(role_df, slots)
-
-        if part is None:
-            continue
-
-        assignments.update(part)
-
-    score = readability_score(assignments)
-
-    if score < 0:
-        raise RuntimeError("Theme rejected: unreadable")
+    assignments = assign_accents(df, cat_dist, assignments)
 
     # --------------------------------------------------------
     # Write Lua
@@ -219,6 +272,7 @@ def assign_elements(
                     f"  {elem} = '#{int(row.R):02x}{int(row.G):02x}{int(row.B):02x}',\n"
                 )
         f.write("}\n\n")
+        f.write(f"return {theme_name}\n")
 
 
 if __name__ == "__main__":
