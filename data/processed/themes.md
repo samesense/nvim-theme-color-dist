@@ -13,10 +13,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#380800</code></td><td style="background:#380800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#a82030</code></td><td style="background:#a82030;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#a06028</code></td><td style="background:#a06028;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#b09898</code></td><td style="background:#b09898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#380800</code></td><td style="background:#380800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#a82030</code></td><td style="background:#a82030;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#a06028</code></td><td style="background:#a06028;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#b09898</code></td><td style="background:#b09898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -27,16 +27,16 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#788890</code></td><td style="background:#788890;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#708088</code></td><td style="background:#708088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#909088</code></td><td style="background:#909088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>red</code></td><td>Accent Red</td><td><code>#808890</code></td><td style="background:#808890;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#809098</code></td><td style="background:#809098;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#c87070</code></td><td style="background:#c87070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#b07840</code></td><td style="background:#b07840;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#b08048</code></td><td style="background:#b08048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#c07070</code></td><td style="background:#c07070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#c06060</code></td><td style="background:#c06060;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#788890</code></td><td style="background:#788890;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#708088</code></td><td style="background:#708088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#909088</code></td><td style="background:#909088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>red</code></td><td>Accent Red</td><td><code>#808890</code></td><td style="background:#808890;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#809098</code></td><td style="background:#809098;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#c87070</code></td><td style="background:#c87070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#b07840</code></td><td style="background:#b07840;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#b08048</code></td><td style="background:#b08048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#c07070</code></td><td style="background:#c07070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#c06060</code></td><td style="background:#c06060;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -51,10 +51,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#383088</code></td><td style="background:#383088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#486898</code></td><td style="background:#486898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#909098</code></td><td style="background:#909098;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#e8f0e8</code></td><td style="background:#e8f0e8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#383088</code></td><td style="background:#383088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#486898</code></td><td style="background:#486898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#909098</code></td><td style="background:#909098;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#e8f0e8</code></td><td style="background:#e8f0e8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -65,14 +65,14 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#b8a068</code></td><td style="background:#b8a068;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#b0a060</code></td><td style="background:#b0a060;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#c0a048</code></td><td style="background:#c0a048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#90a8c0</code></td><td style="background:#90a8c0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#90a8c8</code></td><td style="background:#90a8c8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#98b8d0</code></td><td style="background:#98b8d0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#a0b8d8</code></td><td style="background:#a0b8d8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#a0b8d0</code></td><td style="background:#a0b8d0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#b8a068</code></td><td style="background:#b8a068;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#b0a060</code></td><td style="background:#b0a060;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#c0a048</code></td><td style="background:#c0a048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#90a8c0</code></td><td style="background:#90a8c0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#90a8c8</code></td><td style="background:#90a8c8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#98b8d0</code></td><td style="background:#98b8d0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#a0b8d8</code></td><td style="background:#a0b8d8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#a0b8d0</code></td><td style="background:#a0b8d0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -87,10 +87,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#100800</code></td><td style="background:#100800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#606060</code></td><td style="background:#606060;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#988870</code></td><td style="background:#988870;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#f0a878</code></td><td style="background:#f0a878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#100800</code></td><td style="background:#100800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#606060</code></td><td style="background:#606060;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#988870</code></td><td style="background:#988870;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#f0a878</code></td><td style="background:#f0a878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -101,15 +101,15 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#b0a898</code></td><td style="background:#b0a898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#b0a888</code></td><td style="background:#b0a888;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#b09878</code></td><td style="background:#b09878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>red</code></td><td>Accent Red</td><td><code>#b8a080</code></td><td style="background:#b8a080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#b0a8a0</code></td><td style="background:#b0a8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#f09000</code></td><td style="background:#f09000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#d88800</code></td><td style="background:#d88800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#e08000</code></td><td style="background:#e08000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#989890</code></td><td style="background:#989890;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#b0a898</code></td><td style="background:#b0a898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#b0a888</code></td><td style="background:#b0a888;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#b09878</code></td><td style="background:#b09878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>red</code></td><td>Accent Red</td><td><code>#b8a080</code></td><td style="background:#b8a080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#b0a8a0</code></td><td style="background:#b0a8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#f09000</code></td><td style="background:#f09000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#d88800</code></td><td style="background:#d88800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#e08000</code></td><td style="background:#e08000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#989890</code></td><td style="background:#989890;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -124,10 +124,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#805818</code></td><td style="background:#805818;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#d88068</code></td><td style="background:#d88068;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#f8b050</code></td><td style="background:#f8b050;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#f0f0f0</code></td><td style="background:#f0f0f0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#805818</code></td><td style="background:#805818;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#d88068</code></td><td style="background:#d88068;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#f8b050</code></td><td style="background:#f8b050;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#f0f0f0</code></td><td style="background:#f0f0f0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -152,10 +152,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#081010</code></td><td style="background:#081010;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#784040</code></td><td style="background:#784040;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#786848</code></td><td style="background:#786848;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#b89868</code></td><td style="background:#b89868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#081010</code></td><td style="background:#081010;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#784040</code></td><td style="background:#784040;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#786848</code></td><td style="background:#786848;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#b89868</code></td><td style="background:#b89868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -166,17 +166,17 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#888080</code></td><td style="background:#888080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#807878</code></td><td style="background:#807878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#707878</code></td><td style="background:#707878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>red</code></td><td>Accent Red</td><td><code>#808880</code></td><td style="background:#808880;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#787868</code></td><td style="background:#787868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#b08000</code></td><td style="background:#b08000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#987000</code></td><td style="background:#987000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#b08800</code></td><td style="background:#b08800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#987830</code></td><td style="background:#987830;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#987828</code></td><td style="background:#987828;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#907860</code></td><td style="background:#907860;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#888080</code></td><td style="background:#888080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#807878</code></td><td style="background:#807878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#707878</code></td><td style="background:#707878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>red</code></td><td>Accent Red</td><td><code>#808880</code></td><td style="background:#808880;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#787868</code></td><td style="background:#787868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#b08000</code></td><td style="background:#b08000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#987000</code></td><td style="background:#987000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#b08800</code></td><td style="background:#b08800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#987830</code></td><td style="background:#987830;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#987828</code></td><td style="background:#987828;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#907860</code></td><td style="background:#907860;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -191,10 +191,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#001030</code></td><td style="background:#001030;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#303030</code></td><td style="background:#303030;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#685048</code></td><td style="background:#685048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#a09860</code></td><td style="background:#a09860;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#001030</code></td><td style="background:#001030;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#303030</code></td><td style="background:#303030;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#685048</code></td><td style="background:#685048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#a09860</code></td><td style="background:#a09860;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -205,15 +205,15 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#908048</code></td><td style="background:#908048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#a84800</code></td><td style="background:#a84800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#908038</code></td><td style="background:#908038;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#888070</code></td><td style="background:#888070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#807868</code></td><td style="background:#807868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#606878</code></td><td style="background:#606878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#687080</code></td><td style="background:#687080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#687868</code></td><td style="background:#687868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#908070</code></td><td style="background:#908070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#908048</code></td><td style="background:#908048;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#a84800</code></td><td style="background:#a84800;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#908038</code></td><td style="background:#908038;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#888070</code></td><td style="background:#888070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#807868</code></td><td style="background:#807868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#606878</code></td><td style="background:#606878;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#687080</code></td><td style="background:#687080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#687868</code></td><td style="background:#687868;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#908070</code></td><td style="background:#908070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -228,10 +228,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#201810</code></td><td style="background:#201810;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#506058</code></td><td style="background:#506058;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#b07838</code></td><td style="background:#b07838;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#f8c080</code></td><td style="background:#f8c080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#201810</code></td><td style="background:#201810;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#506058</code></td><td style="background:#506058;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#b07838</code></td><td style="background:#b07838;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#f8c080</code></td><td style="background:#f8c080;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -242,15 +242,15 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#b09070</code></td><td style="background:#b09070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#b89070</code></td><td style="background:#b89070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#d0b090</code></td><td style="background:#d0b090;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>red</code></td><td>Accent Red</td><td><code>#d0b8a0</code></td><td style="background:#d0b8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#b0a090</code></td><td style="background:#b0a090;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#a89078</code></td><td style="background:#a89078;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#a09078</code></td><td style="background:#a09078;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#989088</code></td><td style="background:#989088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#c08848</code></td><td style="background:#c08848;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#b09070</code></td><td style="background:#b09070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#b89070</code></td><td style="background:#b89070;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#d0b090</code></td><td style="background:#d0b090;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>red</code></td><td>Accent Red</td><td><code>#d0b8a0</code></td><td style="background:#d0b8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#b0a090</code></td><td style="background:#b0a090;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>peach</code></td><td>Accent Warm</td><td><code>#a89078</code></td><td style="background:#a89078;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>yellow</code></td><td>Accent Warm</td><td><code>#a09078</code></td><td style="background:#a09078;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>green</code></td><td>Accent Warm</td><td><code>#989088</code></td><td style="background:#989088;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>mauve</code></td><td>Accent Bridge</td><td><code>#c08848</code></td><td style="background:#c08848;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -265,10 +265,10 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Role</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Background</code></td><td><code>#081000</code></td><td style="background:#081000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Surface</code></td><td><code>#887040</code></td><td style="background:#887040;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Overlay</code></td><td><code>#c89058</code></td><td style="background:#c89058;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>Text</code></td><td><code>#f0f0b0</code></td><td style="background:#f0f0b0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>Background</code></td><td><code>#081000</code></td><td style="background:#081000;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Surface</code></td><td><code>#887040</code></td><td style="background:#887040;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Overlay</code></td><td><code>#c89058</code></td><td style="background:#c89058;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>Text</code></td><td><code>#f0f0b0</code></td><td style="background:#f0f0b0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>
 
@@ -279,15 +279,15 @@ _Auto-generated. GitHub-first rendering (Catppuccin style)._
 <tr><th>Element</th><th>Group</th><th>Hex</th><th>Preview</th></tr>
 </thead>
 <tbody>
-<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#b0a8a0</code></td><td style="background:#b0a8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#b8b0a8</code></td><td style="background:#b8b0a8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#c0a898</code></td><td style="background:#c0a898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>red</code></td><td>Accent Red</td><td><code>#c0a8a0</code></td><td style="background:#c0a8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#c0b098</code></td><td style="background:#c0b098;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#d0a068</code></td><td style="background:#d0a068;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#d8a870</code></td><td style="background:#d8a870;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#d0a860</code></td><td style="background:#d0a860;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#e8a850</code></td><td style="background:#e8a850;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
-<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#d8a050</code></td><td style="background:#d8a050;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;"></td></tr>
+<tr><td><code>rosewater</code></td><td>Accent Red</td><td><code>#b0a8a0</code></td><td style="background:#b0a8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>flamingo</code></td><td>Accent Red</td><td><code>#b8b0a8</code></td><td style="background:#b8b0a8;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>pink</code></td><td>Accent Red</td><td><code>#c0a898</code></td><td style="background:#c0a898;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>red</code></td><td>Accent Red</td><td><code>#c0a8a0</code></td><td style="background:#c0a8a0;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>maroon</code></td><td>Accent Red</td><td><code>#c0b098</code></td><td style="background:#c0b098;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>teal</code></td><td>Accent Cool</td><td><code>#d0a068</code></td><td style="background:#d0a068;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sky</code></td><td>Accent Cool</td><td><code>#d8a870</code></td><td style="background:#d8a870;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>sapphire</code></td><td>Accent Cool</td><td><code>#d0a860</code></td><td style="background:#d0a860;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>blue</code></td><td>Accent Cool</td><td><code>#e8a850</code></td><td style="background:#e8a850;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
+<tr><td><code>lavender</code></td><td>Accent Cool</td><td><code>#d8a050</code></td><td style="background:#d8a050;padding:0.6rem 1.2rem;border-radius:4px;border:1px solid #00000020;">&nbsp;</td></tr>
 </tbody>
 </table>

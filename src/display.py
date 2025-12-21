@@ -52,8 +52,8 @@ def parse_lua_theme(path: Path) -> dict[str, str]:
 
 def swatch_td(hex_color: str) -> str:
     """
-    This EXACT pattern is required for GitHub:
-    - non-empty content (&nbsp;)
+    GitHub requires:
+    - non-empty <td>
     - padding (not height)
     """
     return (
@@ -62,7 +62,7 @@ def swatch_td(hex_color: str) -> str:
         f"padding:0.6rem 1.2rem;"
         f"border-radius:4px;"
         f"border:1px solid #00000020;"
-        f'"></td>'
+        f'">&nbsp;</td>'
     )
 
 
