@@ -71,50 +71,57 @@ def pick_structural(df):
     """
     out = {}
 
-    bg = (
-        df[df.assigned_catppuccin_role == "background"]
-        .sort_values("L")
-        .iloc[0]
-        .to_dict()
-    )
+    # pick background (record its index)
+    bg_series = df[df.assigned_catppuccin_role == "background"].sort_values("L").iloc[0]
+    bg = bg_series.to_dict()
+    bg["_idx"] = bg_series.name
 
-    text = (
-        df[df.assigned_catppuccin_role == "text"]
-        .sort_values("L", ascending=False)
-        .iloc[0]
-        .to_dict()
-    )
+    # pick text, avoid reusing background
+    text_candidates = df[df.assigned_catppuccin_role == "text"].sort_values("L", ascending=False)
+    text_series = text_candidates.loc[~text_candidates.index.isin({bg["_idx"]})].iloc[0]
+    text = text_series.to_dict()
+    text["_idx"] = text_series.name
 
     if abs(text["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
         raise RuntimeError("Text/background contrast too low after pruning")
 
-    surface = (
-        df[df.assigned_catppuccin_role == "surface"]
-        .iloc[
-            (
-                df[df.assigned_catppuccin_role == "surface"]["L"]
-                - (bg["L"] + text["L"]) / 2
-            )
-            .abs()
-            .argsort()
-        ]
-        .iloc[0]
-        .to_dict()
-    )
+    used = {bg["_idx"], text["_idx"]}
 
-    overlay = (
-        df[df.assigned_catppuccin_role == "overlay"]
+    # pick surface, avoid used indices
+    surface_candidates = df[df.assigned_catppuccin_role == "surface"]
+    surface_filtered = surface_candidates.loc[~surface_candidates.index.isin(used)]
+    surface_series = (
+        surface_filtered
         .iloc[
             (
-                df[df.assigned_catppuccin_role == "overlay"]["L"]
-                - (surface["L"] + text["L"]) / 2
+                surface_filtered["L"] - (bg["L"] + text["L"]) / 2
             )
             .abs()
             .argsort()
         ]
         .iloc[0]
-        .to_dict()
     )
+    surface = surface_series.to_dict()
+    surface["_idx"] = surface_series.name
+
+    used.add(surface["_idx"])
+
+    # pick overlay, avoid used indices
+    overlay_candidates = df[df.assigned_catppuccin_role == "overlay"]
+    overlay_filtered = overlay_candidates.loc[~overlay_candidates.index.isin(used)]
+    overlay_series = (
+        overlay_filtered
+        .iloc[
+            (
+                overlay_filtered["L"] - (surface["L"] + text["L"]) / 2
+            )
+            .abs()
+            .argsort()
+        ]
+        .iloc[0]
+    )
+    overlay = overlay_series.to_dict()
+    overlay["_idx"] = overlay_series.name
 
     out.update(
         {
@@ -138,18 +145,28 @@ def pick_accents(df, assignments):
     overlay_L = assignments["overlay1"]["L"]
     ideal_L = text_L - ACCENT_IDEAL_OFFSET
 
+    # track used row indices so a single color isn't assigned twice
+    used_idxs = {v.get("_idx") for v in assignments.values() if v.get("_idx") is not None}
+
     for role in ACCENT_ROLES:
         sub = df[df.assigned_catppuccin_role == role]
         if sub.empty:
             continue
 
         elems = CATPPUCCIN_ELEMENTS[role]
+        # keep original df index as _idx for uniqueness checks
+        sub = sub.reset_index().rename(columns={"index": "_idx"})
+        sub = sub.loc[~sub["_idx"].isin(used_idxs)]
         sub = sub.sort_values("frequency", ascending=False).head(50)
 
         best = None
         best_score = -np.inf
 
         for rows in itertools.combinations(sub.to_dict("records"), len(elems)):
+            # skip any combination that uses an already-used color
+            if any(r.get("_idx") in used_idxs for r in rows):
+                continue
+
             # hard feasibility
             if any(r["L"] > text_L - 5 or r["L"] < overlay_L + 5 for r in rows):
                 continue
@@ -178,6 +195,7 @@ def pick_accents(df, assignments):
 
         if best:
             assignments.update(dict(zip(elems, best)))
+            used_idxs.update({r.get("_idx") for r in best})
 
     return assignments
 
@@ -192,22 +210,33 @@ def render_elements(assignments):
     table = Table(show_header=True, header_style="bold")
 
     table.add_column("Element", style="cyan")
-    table.add_column("Hex")
+    table.add_column("Semantic hex")
+    table.add_column("Semantic", justify="center")
+    table.add_column("Final hex")
+    table.add_column("Final", justify="center")
     table.add_column("L*")
-    table.add_column("Preview")
 
     for elem, row in assignments.items():
-        hexc = f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}"
-        swatch = Text("      ", style=Style(bgcolor=hexc))
-        table.add_row(elem, hexc, f"{row['L']:.1f}", swatch)
+        # semantic color (what was chosen)
+        semantic_hex = f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}"
+        semantic_swatch = Text("      ", style=Style(bgcolor=semantic_hex))
 
-    console.print("\n[bold]Chosen Catppuccin Elements[/bold]\n")
+        # final color (what Lua gets)
+        # right now identical, but intentionally duplicated
+        final_hex = semantic_hex
+        final_swatch = Text("      ", style=Style(bgcolor=final_hex))
+
+        table.add_row(
+            elem,
+            semantic_hex,
+            semantic_swatch,
+            final_hex,
+            final_swatch,
+            f"{row['L']:.1f}",
+        )
+
+    console.print("\n[bold]Semantic vs Final Theme Colors[/bold]\n")
     console.print(table)
-
-
-# ============================================================
-# CLI
-# ============================================================
 
 
 @click.command()
