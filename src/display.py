@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import re
 import urllib.parse
 from pathlib import Path
