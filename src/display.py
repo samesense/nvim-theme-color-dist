@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
 import re
+import urllib.parse
 from pathlib import Path
 
 import click
 
 # ============================================================
-# Catppuccin-style grouping
+# Grouping
 # ============================================================
 
 CORE_UI = [
@@ -46,34 +48,19 @@ def parse_lua_theme(path: Path) -> dict[str, str]:
 
 
 # ============================================================
-# GitHub-safe HTML helpers (THIS IS THE KEY)
+# SVG swatch (GitHub-proof)
 # ============================================================
 
 
-def swatch_td(hex_color: str) -> str:
-    """
-    GitHub-safe:
-    - uses bgcolor attribute (NOT CSS)
-    - non-empty cell
-    - padding for size
-    """
-    return (
-        f'<td bgcolor="{hex_color}" '
-        f'style="padding:0.6rem 1.2rem; border-radius:4px; border:1px solid #00000020;">'
-        f"&nbsp;</td>"
-    )
+def svg_swatch(hex_color: str) -> str:
+    svg = f"""
+<svg xmlns='http://www.w3.org/2000/svg' width='48' height='16'>
+  <rect width='48' height='16' rx='4' ry='4' fill='{hex_color}' />
+</svg>
+""".strip()
 
-
-def palette_strip(colors: dict[str, str]) -> str:
-    blocks = []
-    for hex_color in colors.values():
-        blocks.append(
-            f"<span "
-            f'style="display:inline-block; width:16px; height:16px; '
-            f"background:{hex_color}; border-radius:3px; "
-            f'border:1px solid #00000020; margin-right:4px;"></span>'
-        )
-    return "".join(blocks)
+    encoded = urllib.parse.quote(svg)
+    return f'<img src="data:image/svg+xml;utf8,{encoded}" />'
 
 
 # ============================================================
@@ -90,7 +77,7 @@ def render_core_table(colors: dict[str, str]) -> str:
             "<tr>"
             f"<td><code>{label}</code></td>"
             f"<td><code>{colors[key]}</code></td>"
-            f"{swatch_td(colors[key])}"
+            f"<td>{svg_swatch(colors[key])}</td>"
             "</tr>"
         )
 
@@ -118,7 +105,7 @@ def render_accent_table(colors: dict[str, str]) -> str:
             f"<td><code>{elem}</code></td>"
             f"<td>{group}</td>"
             f"<td><code>{colors[elem]}</code></td>"
-            f"{swatch_td(colors[elem])}"
+            f"<td>{svg_swatch(colors[elem])}</td>"
             "</tr>"
         )
 
@@ -140,8 +127,6 @@ def render_theme(name: str, colors: dict[str, str]) -> str:
     return "\n".join(
         [
             f"## 🎨 {name}",
-            "",
-            palette_strip(colors),
             "",
             "### Core UI",
             "",
@@ -179,7 +164,7 @@ def render_themes(theme_dir: Path, out: Path):
     md = [
         "# Theme Gallery",
         "",
-        "_Auto-generated. GitHub-first rendering (Catppuccin style)._",
+        "_Auto-generated. GitHub-safe SVG swatches._",
         "",
     ]
 
