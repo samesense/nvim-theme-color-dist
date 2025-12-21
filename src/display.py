@@ -4,14 +4,14 @@ from pathlib import Path
 import click
 
 # ============================================================
-# Config (Catppuccin-style grouping)
+# Catppuccin-style grouping
 # ============================================================
 
 CORE_UI = [
-    ("base", "Background"),
-    ("surface1", "Surface"),
-    ("overlay1", "Overlay"),
-    ("text", "Text"),
+    ("Background", "base"),
+    ("Surface", "surface1"),
+    ("Overlay", "overlay1"),
+    ("Text", "text"),
 ]
 
 ACCENTS = [
@@ -33,7 +33,6 @@ ACCENTS = [
 
 LUA_KV_RE = re.compile(r"(\w+)\s*=\s*'(#?[0-9a-fA-F]{6})'")
 
-
 # ============================================================
 # Parsing
 # ============================================================
@@ -47,29 +46,34 @@ def parse_lua_theme(path: Path) -> dict[str, str]:
 
 
 # ============================================================
-# Rendering helpers (GitHub-safe)
+# GitHub-safe HTML helpers
 # ============================================================
 
 
 def swatch_td(hex_color: str) -> str:
+    """
+    This EXACT pattern is required for GitHub:
+    - non-empty content (&nbsp;)
+    - padding (not height)
+    """
     return (
         f'<td style="'
         f"background:{hex_color};"
-        f"width:2.5rem;"
+        f"padding:0.6rem 1.2rem;"
         f"border-radius:4px;"
         f"border:1px solid #00000020;"
-        f'">&nbsp;</td>'
+        f'"></td>'
     )
 
 
 def palette_strip(colors: dict[str, str]) -> str:
     blocks = []
-    for _, hex_color in colors.items():
+    for hex_color in colors.values():
         blocks.append(
             f'<span style="'
             f"display:inline-block;"
-            f"width:18px;"
-            f"height:18px;"
+            f"width:16px;"
+            f"height:16px;"
             f"background:{hex_color};"
             f"border-radius:3px;"
             f"border:1px solid #00000020;"
@@ -79,16 +83,21 @@ def palette_strip(colors: dict[str, str]) -> str:
     return "".join(blocks)
 
 
+# ============================================================
+# Rendering
+# ============================================================
+
+
 def render_core_table(colors: dict[str, str]) -> str:
     rows = []
-    for elem, label in CORE_UI:
-        if elem not in colors:
+    for label, key in CORE_UI:
+        if key not in colors:
             continue
         rows.append(
             "<tr>"
             f"<td><code>{label}</code></td>"
-            f"<td><code>{colors[elem]}</code></td>"
-            f"{swatch_td(colors[elem])}"
+            f"<td><code>{colors[key]}</code></td>"
+            f"{swatch_td(colors[key])}"
             "</tr>"
         )
 
@@ -114,7 +123,7 @@ def render_accent_table(colors: dict[str, str]) -> str:
         rows.append(
             "<tr>"
             f"<td><code>{elem}</code></td>"
-            f"<td><code>{group}</code></td>"
+            f"<td>{group}</td>"
             f"<td><code>{colors[elem]}</code></td>"
             f"{swatch_td(colors[elem])}"
             "</tr>"
