@@ -46,23 +46,21 @@ def parse_lua_theme(path: Path) -> dict[str, str]:
 
 
 # ============================================================
-# GitHub-safe HTML helpers
+# GitHub-safe HTML helpers (THIS IS THE KEY)
 # ============================================================
 
 
 def swatch_td(hex_color: str) -> str:
     """
-    GitHub requires:
-    - non-empty <td>
-    - padding (not height)
+    GitHub-safe:
+    - uses bgcolor attribute (NOT CSS)
+    - non-empty cell
+    - padding for size
     """
     return (
-        f'<td style="'
-        f"background:{hex_color};"
-        f"padding:0.6rem 1.2rem;"
-        f"border-radius:4px;"
-        f"border:1px solid #00000020;"
-        f'">&nbsp;</td>'
+        f'<td bgcolor="{hex_color}" '
+        f'style="padding:0.6rem 1.2rem; border-radius:4px; border:1px solid #00000020;">'
+        f"&nbsp;</td>"
     )
 
 
@@ -70,15 +68,10 @@ def palette_strip(colors: dict[str, str]) -> str:
     blocks = []
     for hex_color in colors.values():
         blocks.append(
-            f'<span style="'
-            f"display:inline-block;"
-            f"width:16px;"
-            f"height:16px;"
-            f"background:{hex_color};"
-            f"border-radius:3px;"
-            f"border:1px solid #00000020;"
-            f"margin-right:4px;"
-            f'"></span>'
+            f"<span "
+            f'style="display:inline-block; width:16px; height:16px; '
+            f"background:{hex_color}; border-radius:3px; "
+            f'border:1px solid #00000020; margin-right:4px;"></span>'
         )
     return "".join(blocks)
 
@@ -179,9 +172,6 @@ def render_theme(name: str, colors: dict[str, str]) -> str:
     type=click.Path(path_type=Path),
 )
 def render_themes(theme_dir: Path, out: Path):
-    """
-    Render *_theme.lua files into a Catppuccin-style GitHub gallery.
-    """
     lua_files = sorted(theme_dir.glob("*.lua"))
     if not lua_files:
         raise click.ClickException("No .lua files found")
