@@ -5,6 +5,5 @@ src/heat.html
 src/heat_files/
 src/.snakemake/
 src/__pycache__/
-data/processed/
 src/*png
 src/*csv
