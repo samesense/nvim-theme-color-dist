@@ -8,77 +8,93 @@ import click
 # Config
 # ------------------------------------------------------------
 
-ROLE_ORDER = [
-    "background",
-    "surface",
-    "overlay",
-    "text",
-    "accent_red",
-    "accent_warm",
-    "accent_cool",
-    "accent_bridge",
+ROLE_GROUPS = [
+    ("Background", ["base", "mantle", "crust"]),
+    ("Surface", ["surface0", "surface1", "surface2"]),
+    ("Overlay", ["overlay0", "overlay1", "overlay2"]),
+    ("Text", ["text", "subtext1", "subtext0"]),
+    ("Accent Red", ["rosewater", "flamingo", "pink", "red", "maroon"]),
+    ("Accent Warm", ["peach", "yellow", "green"]),
+    ("Accent Cool", ["teal", "sky", "sapphire", "blue", "lavender"]),
+    ("Accent Bridge", ["mauve"]),
 ]
-
-ROLE_ELEMENTS = {
-    "background": ["base", "mantle", "crust"],
-    "surface": ["surface0", "surface1", "surface2"],
-    "overlay": ["overlay0", "overlay1", "overlay2"],
-    "text": ["text", "subtext1", "subtext0"],
-    "accent_red": ["rosewater", "flamingo", "pink", "red", "maroon"],
-    "accent_warm": ["peach", "yellow", "green"],
-    "accent_cool": ["teal", "sky", "sapphire", "blue", "lavender"],
-    "accent_bridge": ["mauve"],
-}
 
 LUA_KV_RE = re.compile(r"(\w+)\s*=\s*'(#?[0-9a-fA-F]{6})'")
 
-# Unicode blocks render well in Glow + GitHub
-SWATCH = "██████"
-
 
 # ------------------------------------------------------------
-# Helpers
+# Parsing
 # ------------------------------------------------------------
 
 
 def parse_lua_theme(path: Path) -> dict[str, str]:
-    text = path.read_text()
-    out = {}
-    for k, v in LUA_KV_RE.findall(text):
-        if not v.startswith("#"):
-            v = f"#{v}"
-        out[k] = v.lower()
-    return out
+    colors = {}
+    for k, v in LUA_KV_RE.findall(path.read_text()):
+        colors[k] = v.lower() if v.startswith("#") else f"#{v.lower()}"
+    return colors
 
 
-def render_color_line(name: str, hex_color: str) -> str:
-    return f"`{name:<10}` {SWATCH} `{hex_color}`"
+# ------------------------------------------------------------
+# Rendering helpers
+# ------------------------------------------------------------
 
 
-def render_role(role: str, colors: dict[str, str]) -> str:
-    elems = ROLE_ELEMENTS[role]
-    lines = []
+def html_swatch(hex_color: str) -> str:
+    return (
+        f'<div style="'
+        f"width: 3rem; "
+        f"height: 1.2rem; "
+        f"background: {hex_color}; "
+        f"border-radius: 4px; "
+        f"border: 1px solid #00000020;"
+        f'"></div>'
+    )
 
-    for e in elems:
-        if e in colors:
-            lines.append(render_color_line(e, colors[e]))
 
-    if not lines:
+def render_role_table(title: str, elements: list[str], colors: dict[str, str]) -> str:
+    rows = []
+
+    for elem in elements:
+        if elem not in colors:
+            continue
+        hex_color = colors[elem]
+        rows.append(
+            f"<tr>"
+            f"<td><code>{elem}</code></td>"
+            f"<td><code>{hex_color}</code></td>"
+            f"<td>{html_swatch(hex_color)}</td>"
+            f"</tr>"
+        )
+
+    if not rows:
         return ""
 
-    title = role.replace("_", " ").title()
-    return "\n".join([f"### {title}", *lines, ""])
+    return "\n".join(
+        [
+            f"### {title}",
+            "",
+            "<table>",
+            "<thead>",
+            "<tr><th>Element</th><th>Hex</th><th>Preview</th></tr>",
+            "</thead>",
+            "<tbody>",
+            *rows,
+            "</tbody>",
+            "</table>",
+            "",
+        ]
+    )
 
 
 def render_theme(theme_name: str, colors: dict[str, str]) -> str:
-    blocks = [f"## 🎨 {theme_name}", ""]
+    out = [f"## 🎨 {theme_name}", ""]
 
-    for role in ROLE_ORDER:
-        block = render_role(role, colors)
+    for title, elems in ROLE_GROUPS:
+        block = render_role_table(title, elems, colors)
         if block:
-            blocks.append(block)
+            out.append(block)
 
-    return "\n".join(blocks)
+    return "\n".join(out)
 
 
 # ------------------------------------------------------------
@@ -99,7 +115,8 @@ def render_theme(theme_name: str, colors: dict[str, str]) -> str:
 )
 def render_themes(theme_dir: Path, out: Path):
     """
-    Render *_theme.lua files into a Markdown theme gallery.
+    Render *_theme.lua files into a GitHub-friendly theme gallery
+    using Catppuccin-style HTML tables.
     """
     lua_files = sorted(theme_dir.glob("*.lua"))
     if not lua_files:
