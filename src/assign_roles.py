@@ -3,13 +3,9 @@ import itertools
 import click
 import numpy as np
 import pandas as pd
-from rich.console import Console
-from rich.style import Style
-from rich.table import Table
-from rich.text import Text
 
 # ============================================================
-# Catppuccin role definitions
+# Constants
 # ============================================================
 
 CATPPUCCIN_ROLES = [
@@ -23,6 +19,9 @@ CATPPUCCIN_ROLES = [
     "accent_bridge",
 ]
 
+STRUCTURAL_ROLES = ["background", "surface", "overlay", "text"]
+ACCENT_ROLES = ["accent_cool", "accent_warm", "accent_red", "accent_bridge"]
+
 ROLE_LIGHTNESS_RANK = {
     "background": 0,
     "surface": 1,
@@ -30,7 +29,6 @@ ROLE_LIGHTNESS_RANK = {
     "text": 3,
 }
 
-# Higher = more permissive
 ROLE_FLEXIBILITY = {
     "background": 0.0,
     "surface": 0.2,
@@ -41,6 +39,19 @@ ROLE_FLEXIBILITY = {
     "accent_warm": 1.0,
     "accent_cool": 1.0,
 }
+
+# Early-exit / speed controls
+MAX_STRUCTURAL_TRIES = 50
+MAX_TOTAL_EVALS = 5000
+GOOD_ENOUGH_SCORE = 8.0
+
+# Structural readability thresholds
+MIN_TEXT_BG_DELTA = 35.0
+MIN_UI_BG_DELTA = 25.0
+MIN_SURFACE_BG_DELTA = 15.0
+MIN_OVERLAY_SURFACE_DELTA = 10.0
+MIN_TEXT_OVERLAY_DELTA = 20.0
+
 
 # ============================================================
 # Utilities
@@ -92,65 +103,81 @@ def flexibility_penalty(image_rank, mapping):
     ) / len(mapping)
 
 
-def confidence_from_scores(best, second):
-    return 1.0 if second <= 0 else max(0.0, 1.0 - best / second)
+# ============================================================
+# Structural feasibility
+# ============================================================
+
+
+def has_valid_structural_configuration(df):
+    try:
+        bg = df[df.assigned_catppuccin_role == "background"]["L"].min()
+        surface = df[df.assigned_catppuccin_role == "surface"]["L"].median()
+        overlay = df[df.assigned_catppuccin_role == "overlay"]["L"].median()
+        text = df[df.assigned_catppuccin_role == "text"]["L"].max()
+    except Exception:
+        return False, 0.0
+
+    deltas = [
+        surface - bg,
+        overlay - bg,
+        overlay - surface,
+        text - overlay,
+        text - bg,
+    ]
+
+    ok = (
+        surface - bg >= MIN_SURFACE_BG_DELTA
+        and overlay - bg >= MIN_UI_BG_DELTA
+        and overlay - surface >= MIN_OVERLAY_SURFACE_DELTA
+        and text - overlay >= MIN_TEXT_OVERLAY_DELTA
+        and text - bg >= MIN_TEXT_BG_DELTA
+    )
+
+    return ok, min(deltas)
 
 
 # ============================================================
-# Color pruning (NEW)
+# Re-tinting (STRUCTURAL ONLY)
+# ============================================================
+
+
+def retint_structural_roles(df):
+    """
+    Expand L* span for structural roles without touching hue (a/b).
+    Deterministic and minimal.
+    """
+    out = df.copy()
+
+    for role, target_L in [
+        ("background", 12.0),
+        ("surface", 28.0),
+        ("overlay", 42.0),
+        ("text", 72.0),
+    ]:
+        mask = out.assigned_catppuccin_role == role
+        if not mask.any():
+            continue
+        out.loc[mask, "L"] = out.loc[mask, "L"].clip(
+            lower=target_L - 5, upper=target_L + 5
+        )
+
+    return out
+
+
+# ============================================================
+# Pruning (AFTER feasibility only)
 # ============================================================
 
 
 def prune_colors_by_role(df):
-    """
-    Remove colors that violate basic role expectations.
-    Conservative by design.
-    """
     kept = []
-
     for role, sub in df.groupby("assigned_catppuccin_role"):
-        if role in {"background", "surface", "overlay"}:
+        if role in STRUCTURAL_ROLES:
             lo, hi = sub.L.quantile([0.15, 0.85])
             kept.append(sub[(sub.L >= lo) & (sub.L <= hi)])
-
-        elif role == "text":
-            hi = sub.L.quantile(0.75)
-            kept.append(sub[sub.L >= hi])
-
         else:
-            # accents: keep most frequent + diverse
             kept.append(sub.sort_values("frequency", ascending=False).head(40))
-
     return pd.concat(kept, ignore_index=True)
-
-
-# ============================================================
-# Rich visualization
-# ============================================================
-
-
-def render_role_strips(df, title):
-    console = Console()
-    table = Table(title=title, show_header=True, header_style="bold")
-
-    table.add_column("Role", style="cyan", no_wrap=True)
-    table.add_column("Count", justify="right")
-    table.add_column("Colors")
-
-    role_order = df.groupby("assigned_catppuccin_role")["L"].mean().sort_values().index
-
-    for role in role_order:
-        sub = df[df.assigned_catppuccin_role == role].sort_values("L")
-        strip = Text()
-
-        for _, r in sub.iterrows():
-            hex_color = f"#{int(r.R):02x}{int(r.G):02x}{int(r.B):02x}"
-            w = min(40, max(1, int(r.frequency * 300)))
-            strip.append(" " * w, style=Style(bgcolor=hex_color))
-
-        table.add_row(role, str(len(sub)), strip)
-
-    console.print(table)
 
 
 # ============================================================
@@ -165,11 +192,12 @@ def render_role_strips(df, title):
 @click.option("--palette", default="mocha")
 def assign_roles(image_colors_csv, catppuccin_distances_csv, out_csv, palette):
     img = pd.read_csv(image_colors_csv)
+
     centroids = image_role_centroids(img)
     image_roles = sorted(centroids)
     image_rank = image_lightness_rank(centroids)
 
-    # image role distances
+    # image distances
     img_rows = []
     for r1, r2 in itertools.combinations(image_roles, 2):
         v1 = np.array(list(centroids[r1].values()))
@@ -177,7 +205,7 @@ def assign_roles(image_colors_csv, catppuccin_distances_csv, out_csv, palette):
         img_rows.append({"role1": r1, "role2": r2, "distance": np.linalg.norm(v1 - v2)})
     img_mat = build_role_distance_matrix(pd.DataFrame(img_rows))
 
-    # catppuccin role distances
+    # catppuccin distances
     cat = pd.read_csv(catppuccin_distances_csv)
     cat = cat[cat.palette == palette]
 
@@ -217,36 +245,79 @@ def assign_roles(image_colors_csv, catppuccin_distances_csv, out_csv, palette):
         cat.groupby(["role1", "role2"]).distance.mean().reset_index()
     )
 
-    results = []
-    for perm in itertools.permutations(CATPPUCCIN_ROLES, len(image_roles)):
-        mapping = dict(zip(image_roles, perm))
+    # ========================================================
+    # STAGE 1: structural feasibility (with retint)
+    # ========================================================
 
-        if ordering_penalty(image_rank, mapping) > 2:
-            continue
+    viable_structural = []
 
-        score = (
-            matrix_mismatch(img_mat, cat_mat, mapping)
-            + ordering_penalty(image_rank, mapping)
-            + flexibility_penalty(image_rank, mapping)
+    for clusters in itertools.permutations(image_roles, 4):
+        struct_map = dict(zip(clusters, STRUCTURAL_ROLES))
+
+        assigned = img.copy()
+        assigned["assigned_catppuccin_role"] = assigned.role.map(
+            lambda r: struct_map.get(r, "accent_cool")
         )
-        results.append((mapping, score))
 
-    best_map, best_score = sorted(results, key=lambda x: x[1])[0]
-    second = sorted(results, key=lambda x: x[1])[1][1]
-    confidence = confidence_from_scores(best_score, second)
+        ok, margin = has_valid_structural_configuration(assigned)
 
-    assigned = img.copy()
-    assigned["assigned_catppuccin_role"] = assigned.role.map(best_map)
+        if not ok:
+            assigned = retint_structural_roles(assigned)
+            ok, margin = has_valid_structural_configuration(assigned)
+            if not ok:
+                continue
 
-    render_role_strips(assigned, "Assigned roles (raw)")
+        viable_structural.append((struct_map, margin))
+        if len(viable_structural) >= MAX_STRUCTURAL_TRIES:
+            break
 
-    pruned = prune_colors_by_role(assigned)
+    if not viable_structural:
+        raise RuntimeError(
+            "Rejected palette: no readable structural configuration found"
+        )
 
-    render_role_strips(pruned, "Assigned roles (pruned)")
+    viable_structural.sort(key=lambda x: x[1], reverse=True)
 
-    pruned.to_csv(out_csv, index=False)
+    # ========================================================
+    # STAGE 2: full mapping
+    # ========================================================
 
-    print(f"\nConfidence: {confidence:.3f}")
+    best_map = None
+    best_score = float("inf")
+    total = 0
+
+    for struct_map, margin in viable_structural:
+        remaining = [r for r in image_roles if r not in struct_map]
+
+        for perm in itertools.permutations(ACCENT_ROLES, len(remaining)):
+            mapping = struct_map | dict(zip(remaining, perm))
+
+            score = (
+                matrix_mismatch(img_mat, cat_mat, mapping)
+                + ordering_penalty(image_rank, mapping)
+                + flexibility_penalty(image_rank, mapping)
+                - margin
+            )
+
+            total += 1
+            if score < best_score:
+                best_score = score
+                best_map = mapping
+                if score <= GOOD_ENOUGH_SCORE:
+                    break
+
+            if total >= MAX_TOTAL_EVALS:
+                break
+
+        if best_score <= GOOD_ENOUGH_SCORE or total >= MAX_TOTAL_EVALS:
+            break
+
+    if best_map is None:
+        raise RuntimeError("No acceptable role assignment found")
+
+    out = img.copy()
+    out["assigned_catppuccin_role"] = out.role.map(best_map)
+    out.to_csv(out_csv, index=False)
 
 
 if __name__ == "__main__":
