@@ -18,9 +18,9 @@ rule extract_roles:
 rule assign_roles:
     input:
         colors = INT / "tmp/{img}_colors.csv",
-        catppuccin=RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
+        catppuccin = RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
     output:
-        assignment= INT / "tmp/{img}_role_assignment.csv"
+        assignment = INT / "tmp/{img}_role_assignment.csv"
     params:
         palette='mocha',
     shell:

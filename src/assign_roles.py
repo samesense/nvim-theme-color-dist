@@ -103,25 +103,110 @@ def confidence_from_scores(best, second):
 
 def prune_colors_by_role(df):
     """
-    Remove colors that violate basic role expectations.
-    Conservative by design.
+    Prune conservatively, but NEVER below what assign_elements needs.
+    Keeps extremes for structural roles, and enough colors per accent bucket.
     """
+    # How many elements assign_elements.py wants per role bucket
+    NEED = {
+        "background": 3,  # base/mantle/crust
+        "surface": 3,  # surface0/1/2
+        "overlay": 3,  # overlay0/1/2
+        "text": 3,  # text/subtext0/1
+        "accent_red": 5,  # rosewater/flamingo/pink/red/maroon
+        "accent_warm": 3,  # peach/yellow/green
+        "accent_cool": 5,  # teal/sky/sapphire/blue/lavender
+        "accent_bridge": 1,  # mauve
+    }
+
     kept = []
 
-    for role, sub in df.groupby("assigned_catppuccin_role"):
-        if role in {"background", "surface", "overlay"}:
-            lo, hi = sub.L.quantile([0.15, 0.85])
-            kept.append(sub[(sub.L >= lo) & (sub.L <= hi)])
+    for role, sub in df.groupby("assigned_catppuccin_role", sort=False):
+        sub = sub.copy()
+
+        need = NEED.get(role, 10)
+        if len(sub) <= need:
+            kept.append(sub)
+            continue
+
+        # Structural roles: keep useful extremes by L* (not mid-quantiles)
+        if role == "background":
+            # keep the darkest tail + a little buffer
+            k = max(need, min(60, len(sub)))
+            kept.append(
+                sub.sort_values(["L", "frequency"], ascending=[True, False]).head(k)
+            )
 
         elif role == "text":
-            hi = sub.L.quantile(0.75)
-            kept.append(sub[sub.L >= hi])
+            # keep the lightest tail + a little buffer
+            k = max(need, min(60, len(sub)))
+            kept.append(
+                sub.sort_values(["L", "frequency"], ascending=[False, False]).head(k)
+            )
+
+        elif role in {"surface", "overlay"}:
+            # keep a broad middle band, but guarantee enough remain
+            lo_q, hi_q = (0.10, 0.90) if role == "surface" else (0.15, 0.95)
+            lo, hi = sub.L.quantile([lo_q, hi_q])
+            mid = sub[(sub.L >= lo) & (sub.L <= hi)]
+
+            # If mid band got too small, fall back to "closest to median L*"
+            if len(mid) < need:
+                med = float(sub.L.median())
+                sub2 = sub.copy()
+                sub2["abs_med"] = (sub2.L - med).abs()
+                mid = sub2.sort_values(
+                    ["abs_med", "frequency"], ascending=[True, False]
+                ).drop(columns="abs_med")
+
+            k = max(need, min(80, len(mid)))
+            kept.append(mid.sort_values("frequency", ascending=False).head(k))
 
         else:
-            # accents: keep most frequent + diverse
-            kept.append(sub.sort_values("frequency", ascending=False).head(40))
+            # Accents: keep frequent + L-diverse so combinations exist
+            k = max(need * 8, min(120, len(sub)))  # plenty of combinatorics headroom
+            sub2 = sub.sort_values("frequency", ascending=False).head(k).copy()
 
-    return pd.concat(kept, ignore_index=True)
+            # ensure L* spread: take top-N, then add farthest-by-L items if needed
+            if len(sub2) < need:
+                sub2 = sub
+
+            kept.append(sub2)
+
+    out = pd.concat(kept, ignore_index=True)
+
+    # Final safety: enforce minimum per role by topping up from original df if needed
+    for role, need in NEED.items():
+        have = (out.assigned_catppuccin_role == role).sum()
+        if have >= need:
+            continue
+        pool = df[df.assigned_catppuccin_role == role].copy()
+        if pool.empty:
+            continue
+        add_n = min(need - have, len(pool))
+        # Prefer extremes for background/text, otherwise frequency
+        if role == "background":
+            extra = pool.sort_values("L", ascending=True).head(add_n)
+        elif role == "text":
+            extra = pool.sort_values("L", ascending=False).head(add_n)
+        else:
+            extra = pool.sort_values("frequency", ascending=False).head(add_n)
+
+        out = pd.concat([out, extra], ignore_index=True).drop_duplicates(
+            subset=[
+                "R",
+                "G",
+                "B",
+                "L",
+                "a",
+                "b",
+                "assigned_catppuccin_role",
+                "role",
+                "frequency",
+            ],
+            keep="first",
+        )
+
+    return out
 
 
 # ============================================================

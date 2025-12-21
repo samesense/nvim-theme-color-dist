@@ -135,13 +135,20 @@ def pick_structural(df):
         .copy()
         .sort_values("L", ascending=False)
     )
+    surface_pool = df[df.assigned_catppuccin_role == "surface"].copy().sort_values("L")
+    overlay_pool = df[df.assigned_catppuccin_role == "overlay"].copy().sort_values("L")
 
-    if bg_pool.empty or text_pool.empty:
-        raise RuntimeError("Missing background or text colors")
+    if bg_pool.empty or text_pool.empty or surface_pool.empty or overlay_pool.empty:
+        raise RuntimeError("Missing one of background/surface/overlay/text colors")
 
     bg_targets = bg_pool["L"].quantile([0.15, 0.20, 0.25]).values
     text_targets = text_pool["L"].quantile([0.90, 0.85, 0.80]).values
 
+    def _nearest_k(pool, target_L, k=7):
+        idxs = (pool["L"] - target_L).abs().argsort().iloc[: min(k, len(pool))]
+        return [_with_idx(pool.iloc[i]) for i in idxs]
+
+    # Search a small neighborhood for a structural solution that actually satisfies constraints
     for bg_L in bg_targets:
         bg = _with_idx(bg_pool.iloc[(bg_pool["L"] - bg_L).abs().argsort().iloc[0]])
 
@@ -151,39 +158,34 @@ def pick_structural(df):
                 continue
 
             text = _with_idx(tc.iloc[(tc["L"] - t_L).abs().argsort().iloc[0]])
-            if abs(text["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
+            if (text["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
                 continue
 
-            surface_pool = df[df.assigned_catppuccin_role == "surface"].copy()
-            overlay_pool = df[df.assigned_catppuccin_role == "overlay"].copy()
-
             surface_target = (bg["L"] + text["L"]) / 2
-            surface = _with_idx(
-                surface_pool.iloc[
-                    (surface_pool["L"] - surface_target).abs().argsort().iloc[0]
-                ]
-            )
+            surface_cands = _nearest_k(surface_pool, surface_target, k=9)
 
-            overlay_target = (surface["L"] + text["L"]) / 2
-            overlay = _with_idx(
-                overlay_pool.iloc[
-                    (overlay_pool["L"] - overlay_target).abs().argsort().iloc[0]
-                ]
-            )
+            for surface in surface_cands:
+                overlay_target = (surface["L"] + text["L"]) / 2
+                overlay_cands = _nearest_k(overlay_pool, overlay_target, k=9)
 
-            return {
-                "base": bg,
-                "surface1": surface,
-                "overlay1": overlay,
-                "text": text,
-            }
+                for overlay in overlay_cands:
+                    cand = {
+                        "base": bg,
+                        "surface1": surface,
+                        "overlay1": overlay,
+                        "text": text,
+                    }
 
-    # Extreme fallback (still deterministic)
+                    if _struct_ok(bg, surface, overlay, text):
+                        return cand
+
+                    # If Tier-1 fails, allow Tier-2 here so you don't return junk early
+                    if _struct_ok_relaxed(bg, surface, overlay, text):
+                        return cand
+
+    # Deterministic fallback (previous behavior), but still tries to be sensible
     bg = _with_idx(bg_pool.iloc[0])
     text = _with_idx(text_pool.iloc[0])
-
-    surface_pool = df[df.assigned_catppuccin_role == "surface"]
-    overlay_pool = df[df.assigned_catppuccin_role == "overlay"]
 
     surface = _with_idx(
         surface_pool.iloc[
