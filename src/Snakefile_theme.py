@@ -10,8 +10,8 @@ rule extract_roles:
         num_roles = 8,
     shell:
         """
-        python role_clusters.py {input} \n
-            --roles {params.num_roles} \n
+        python role_clusters.py {input} \
+            --roles {params.num_roles} \
             --out-prefix {params.out_prefix}
         """
 
@@ -44,9 +44,7 @@ rule assign_elements:
     shell:
         """
         python assign_elements.py \
-            {input.colors} \
             {input.assignment} \
-            {input.catppuccin} \
             --out-lua {output.luaout} \
             --theme-name {params.tname}
         """

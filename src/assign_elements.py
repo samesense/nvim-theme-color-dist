@@ -3,9 +3,13 @@ import itertools
 import click
 import numpy as np
 import pandas as pd
+from rich.console import Console
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
 
 # ============================================================
-# Catppuccin element definitions
+# Constants
 # ============================================================
 
 CATPPUCCIN_ELEMENTS = {
@@ -19,6 +23,9 @@ CATPPUCCIN_ELEMENTS = {
     "accent_bridge": ["mauve"],
 }
 
+STRUCTURAL_ROLES = ["background", "surface", "overlay", "text"]
+ACCENT_ROLES = ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]
+
 ROLE_ORDER = [
     "accent_red",
     "accent_warm",
@@ -30,10 +37,12 @@ ROLE_ORDER = [
     "background",
 ]
 
-STRUCTURAL_ROLES = ["background", "surface", "overlay", "text"]
-ACCENT_ROLES = ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]
-
 MIN_TEXT_BG_DELTA = 35.0
+
+ACCENT_TEXT_GAP = 20.0  # must be below text
+ACCENT_IDEAL_OFFSET = 30.0  # ideal L* below text
+ACCENT_SOFT_WIDTH = 12.0  # softness of band
+ACCENT_SOFT_WEIGHT = 0.5  # strength of pull
 
 
 # ============================================================
@@ -49,171 +58,105 @@ def delta_e(a, b):
     return np.linalg.norm(lab(a) - lab(b))
 
 
-def build_catppuccin_element_distances(df):
-    dist = {}
-    for _, r in df.iterrows():
-        a, b = sorted([r.element1, r.element2])
-        dist[(a, b)] = r.distance
-    return dist
-
-
-def infer_element_slots(cat_dist, elements):
-    if len(elements) == 1:
-        return elements
-
-    n = len(elements)
-    mat = np.zeros((n, n))
-
-    for i, a in enumerate(elements):
-        for j, b in enumerate(elements):
-            if i != j:
-                mat[i, j] = cat_dist.get(tuple(sorted([a, b])), 0.0)
-
-    vals, vecs = np.linalg.eig(mat)
-    axis = vecs[:, np.argmax(vals.real)].real
-    order = np.argsort(axis)
-
-    return [elements[i] for i in order]
-
-
 # ============================================================
-# Readability scoring
+# Structural assignment
 # ============================================================
 
 
-def readability_score(assignments):
-    required = ["base", "surface1", "overlay1", "text"]
-    for k in required:
-        if k not in assignments:
-            return -np.inf
+def pick_structural(df):
+    """
+    Deterministic structural selection:
+    darkest background, brightest text,
+    midpoint surface/overlay.
+    """
+    out = {}
 
-    base = assignments["base"]
-    text = assignments["text"]
-
-    delta = abs(text["L"] - base["L"])
-    score = delta * 2
-
-    chain = [("base", "surface1"), ("surface1", "overlay1"), ("overlay1", "text")]
-    for a, b in chain:
-        score += abs(assignments[b]["L"] - assignments[a]["L"])
-
-    if delta < MIN_TEXT_BG_DELTA:
-        score -= (MIN_TEXT_BG_DELTA - delta) * 4
-
-    return score
-
-
-# ============================================================
-# Structural assignment (bounded, safe)
-# ============================================================
-
-
-def assign_structural_joint(df, cat_dist):
-    role_dfs = {
-        r: df[df.assigned_catppuccin_role == r].sort_values("L").reset_index(drop=True)
-        for r in STRUCTURAL_ROLES
-    }
-
-    slot_map = {
-        r: infer_element_slots(cat_dist, CATPPUCCIN_ELEMENTS[r])
-        for r in STRUCTURAL_ROLES
-    }
-
-    # pick up to 5 candidates per role (prevents explosion)
-    candidates = {}
-    for r, rdf in role_dfs.items():
-        if len(rdf) < len(slot_map[r]):
-            return None
-        step = max(1, len(rdf) // 5)
-        candidates[r] = rdf.iloc[::step].head(5)
-
-    best = None
-    best_score = -np.inf
-
-    for bg in candidates["background"].itertuples(index=False):
-        for txt in candidates["text"].itertuples(index=False):
-            if abs(txt.L - bg.L) < MIN_TEXT_BG_DELTA:
-                continue
-
-            for surf in candidates["surface"].itertuples(index=False):
-                for ov in candidates["overlay"].itertuples(index=False):
-                    trial = {}
-
-                    trial.update(dict(zip(slot_map["background"], [bg])))
-                    trial.update(dict(zip(slot_map["text"], [txt])))
-                    trial.update(dict(zip(slot_map["surface"], [surf])))
-                    trial.update(dict(zip(slot_map["overlay"], [ov])))
-
-                    score = readability_score(trial)
-                    if score > best_score:
-                        best_score = score
-                        best = trial
-
-    return best
-
-
-# ============================================================
-# Fallback synthesis (deterministic, safe)
-# ============================================================
-
-
-def synthesize(a, b, alpha):
-    return {
-        "L": a["L"] * (1 - alpha) + b["L"] * alpha,
-        "a": a["a"] * (1 - alpha) + b["a"] * alpha,
-        "b": a["b"] * (1 - alpha) + b["b"] * alpha,
-        "R": int(a["R"] * (1 - alpha) + b["R"] * alpha),
-        "G": int(a["G"] * (1 - alpha) + b["G"] * alpha),
-        "B": int(a["B"] * (1 - alpha) + b["B"] * alpha),
-    }
-
-
-def derive_structural_fallback(df):
     bg = (
         df[df.assigned_catppuccin_role == "background"]
         .sort_values("L")
-        .iloc[1]
+        .iloc[0]
         .to_dict()
     )
 
-    txt = df[df.assigned_catppuccin_role == "text"].sort_values("L").iloc[-1].to_dict()
+    text = (
+        df[df.assigned_catppuccin_role == "text"]
+        .sort_values("L", ascending=False)
+        .iloc[0]
+        .to_dict()
+    )
 
-    if abs(txt["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
-        txt = synthesize(bg, txt, 0.85)
+    if abs(text["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
+        raise RuntimeError("Text/background contrast too low after pruning")
 
-    surface = synthesize(bg, txt, 0.35)
-    overlay = synthesize(bg, txt, 0.6)
+    surface = (
+        df[df.assigned_catppuccin_role == "surface"]
+        .iloc[
+            (
+                df[df.assigned_catppuccin_role == "surface"]["L"]
+                - (bg["L"] + text["L"]) / 2
+            )
+            .abs()
+            .argsort()
+        ]
+        .iloc[0]
+        .to_dict()
+    )
 
-    return {
-        "base": bg,
-        "surface1": surface,
-        "overlay1": overlay,
-        "text": txt,
-    }
+    overlay = (
+        df[df.assigned_catppuccin_role == "overlay"]
+        .iloc[
+            (
+                df[df.assigned_catppuccin_role == "overlay"]["L"]
+                - (surface["L"] + text["L"]) / 2
+            )
+            .abs()
+            .argsort()
+        ]
+        .iloc[0]
+        .to_dict()
+    )
+
+    out.update(
+        {
+            "base": bg,
+            "surface1": surface,
+            "overlay1": overlay,
+            "text": text,
+        }
+    )
+
+    return out
 
 
 # ============================================================
-# Accent assignment (after structure)
+# Accent assignment (with soft target band)
 # ============================================================
 
 
-def assign_accents(df, assignments):
+def pick_accents(df, assignments):
+    text_L = assignments["text"]["L"]
+    overlay_L = assignments["overlay1"]["L"]
+    ideal_L = text_L - ACCENT_IDEAL_OFFSET
+
     for role in ACCENT_ROLES:
-        role_df = df[df.assigned_catppuccin_role == role]
-        if role_df.empty:
+        sub = df[df.assigned_catppuccin_role == role]
+        if sub.empty:
             continue
 
-        slots = CATPPUCCIN_ELEMENTS[role]
-        role_df = role_df.sort_values("frequency", ascending=False).head(40)
-
-        if len(role_df) < len(slots):
-            continue
+        elems = CATPPUCCIN_ELEMENTS[role]
+        sub = sub.sort_values("frequency", ascending=False).head(50)
 
         best = None
         best_score = -np.inf
 
-        for rows in itertools.combinations(role_df.to_dict("records"), len(slots)):
+        for rows in itertools.combinations(sub.to_dict("records"), len(elems)):
+            # hard feasibility
+            if any(r["L"] > text_L - 5 or r["L"] < overlay_L + 5 for r in rows):
+                continue
+
             score = 0.0
+
+            # separation inside role
             for a, b in itertools.combinations(rows, 2):
                 score += delta_e(a, b)
 
@@ -221,14 +164,45 @@ def assign_accents(df, assignments):
                 score -= 0.3 * delta_e(r, assignments["text"])
                 score -= 0.2 * delta_e(r, assignments["base"])
 
+                # hard guard
+                if r["L"] > text_L - ACCENT_TEXT_GAP:
+                    score -= 100
+
+                # soft target band (KEY FIX)
+                dist = abs(r["L"] - ideal_L)
+                score -= (dist / ACCENT_SOFT_WIDTH) ** 2 * ACCENT_SOFT_WEIGHT
+
             if score > best_score:
                 best_score = score
                 best = rows
 
         if best:
-            assignments.update(dict(zip(slots, best)))
+            assignments.update(dict(zip(elems, best)))
 
     return assignments
+
+
+# ============================================================
+# Rich display
+# ============================================================
+
+
+def render_elements(assignments):
+    console = Console()
+    table = Table(show_header=True, header_style="bold")
+
+    table.add_column("Element", style="cyan")
+    table.add_column("Hex")
+    table.add_column("L*")
+    table.add_column("Preview")
+
+    for elem, row in assignments.items():
+        hexc = f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}"
+        swatch = Text("      ", style=Style(bgcolor=hexc))
+        table.add_row(elem, hexc, f"{row['L']:.1f}", swatch)
+
+    console.print("\n[bold]Chosen Catppuccin Elements[/bold]\n")
+    console.print(table)
 
 
 # ============================================================
@@ -237,30 +211,21 @@ def assign_accents(df, assignments):
 
 
 @click.command()
-@click.argument("image_colors_csv", type=click.Path(exists=True))
-@click.argument("role_assignment_csv", type=click.Path(exists=True))
-@click.argument("catppuccin_distances_csv", type=click.Path(exists=True))
+@click.argument("role_colors_csv", type=click.Path(exists=True))
 @click.option("--out-lua", default="theme.lua")
-@click.option("--theme-name", default="painting_light")
-def assign_elements(
-    image_colors_csv, role_assignment_csv, catppuccin_distances_csv, out_lua, theme_name
-):
-    colors = pd.read_csv(image_colors_csv)
-    roles = pd.read_csv(role_assignment_csv)
+@click.option("--theme-name", default="painting")
+def assign_elements(role_colors_csv, out_lua, theme_name):
+    df = pd.read_csv(role_colors_csv)
 
-    df = colors.merge(
-        roles,
-        left_on="role",
-        right_on="image_role",
-        how="inner",
-    )
+    required = {"R", "G", "B", "L", "a", "b", "frequency", "assigned_catppuccin_role"}
+    missing = required - set(df.columns)
+    if missing:
+        raise RuntimeError(f"Missing required columns: {missing}")
 
-    assignments = assign_structural_joint(df, None)
-    if assignments is None:
-        print("⚠️ No readable structural theme found — using fallback synthesis")
-        assignments = derive_structural_fallback(df)
+    assignments = pick_structural(df)
+    assignments = pick_accents(df, assignments)
 
-    assignments = assign_accents(df, assignments)
+    render_elements(assignments)
 
     with open(out_lua, "w") as f:
         f.write(f"local {theme_name} = {{\n")
