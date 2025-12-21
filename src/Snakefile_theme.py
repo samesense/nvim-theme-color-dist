@@ -15,7 +15,7 @@ rule extract_roles:
             --out-prefix {params.out_prefix}
         """
 
-rule assign_roles:
+rule assign_structure_roles:
     input:
         colors = INT / "tmp/{img}_colors.csv",
         catppuccin=RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
@@ -32,10 +32,19 @@ rule assign_roles:
             --palette {params.palette}
         """
 
+rule assign_accents:
+    input:
+        colors = INT / "tmp/{img}_colors.csv",
+        assignment= INT / "tmp/{img}_role_assignment.csv"
+    output:
+        assignment= INT / "tmp/{img}_role_assignment_acc.csv"
+    shell:
+        'python assign_accents.py {input} {output}'
+
 rule assign_elements:
     input:
         colors = INT / "tmp/{img}_colors.csv",
-        assignment = INT / "tmp/{img}_role_assignment.csv",
+        assignment = INT / "tmp/{img}_role_assignment_acc.csv",
         catppuccin = RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
     output:
         luaout = END / "{img}_theme.lua",
