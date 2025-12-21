@@ -3,7 +3,8 @@ include: "Snakefile_theme.py"
 
 PALETTE = "mocha"
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"
-IMGS = ('abstractBoxes', 'blueMosqueCeil', 'forest',)
+IMGS = ('abstractBoxes', 'blueMosqueCeil',)
+#IMGS = ('forest',)
 
 rule all:
     input:
