@@ -34,3 +34,25 @@ rule plot_deltaL_margins:
             {input.csv} \
             --out {output.png}
         """
+
+rule chroma_trend:
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        csv = INT / "constraints/chroma_role.csv",
+    shell:
+        """
+        python compute_chroma_by_role.py \
+            {input} {output.csv}
+        """
+
+rule plot_chroma_trend:
+    input:
+        csv = INT / "constraints/chroma_role.csv",
+    output:
+        png = END / "figures/chroma_by_role.png",
+    shell:
+        """
+        python plot_chroma_by_role.py \
+            {input} {output}
+        """
