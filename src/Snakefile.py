@@ -1,4 +1,5 @@
 include: "Snakefile_const.py"
+include: "Snakefile_trends.py"
 include: "Snakefile_theme.py"
 
 PALETTE = "mocha"
@@ -8,4 +9,5 @@ IMGS = ('forest', 'couple', 'bull', 'witch')
 
 rule all:
     input:
-        expand(END / "{img}_theme.lua", img=IMGS),
+        #expand(END / "{img}_theme.lua", img=IMGS),
+        END / "figures/deltaL_margins.png",
