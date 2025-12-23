@@ -3,7 +3,7 @@ rule parse_cap_themes:
         INT / 'cap_colors.csv',
     shell:
         'python parse_cap.py {output}'
-    
+ 
 rule deltaL_margins:
     """
     Compute ΔL* margins between semantic role pairs
@@ -16,7 +16,7 @@ rule deltaL_margins:
     shell:
         """
         python compute_deltaL_margins.py \
-            {input} \
+            --colors-csv {input} \
             --out {output.csv}
         """
 
@@ -40,10 +40,12 @@ rule chroma_trend:
         INT / 'cap_colors.csv',
     output:
         csv = INT / "constraints/chroma_role.csv",
+        sumcsv = INT / "constraints/chroma_summary.csv",
     shell:
         """
         python compute_chroma_by_role.py \
-            {input} {output.csv}
+            --lab-csv {input} --out-csv {output.csv} \
+            --summary-csv {output.sumcsv}
         """
 
 rule plot_chroma_trend:
@@ -54,7 +56,7 @@ rule plot_chroma_trend:
     shell:
         """
         python plot_chroma_by_role.py \
-            {input} {output}
+            --csv {input} --out {output}
         """
 
 rule hue_trend_data:

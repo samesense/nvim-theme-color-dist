@@ -29,6 +29,7 @@ ROLE_MAP = {
     "subtext1": "text",
 }
 
+# Structurally meaningful margins only
 ROLE_PAIRS = [
     ("background", "surface"),
     ("surface", "overlay"),
@@ -38,26 +39,31 @@ ROLE_PAIRS = [
 
 
 @click.command()
-@click.argument(
+@click.option(
+    "--colors-csv",
     "catppuccin_colors_csv",
-    type=click.Path(exists=True, path_type=Path),
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Input CSV with columns: palette, element, L",
 )
 @click.option(
     "--out",
-    default="deltaL_margins.csv",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default="deltaL_margins_by_palette.csv",
     show_default=True,
-    type=click.Path(path_type=Path),
+    help="Output CSV of ΔL* margins by palette",
 )
 def compute_deltaL(catppuccin_colors_csv: Path, out: Path):
     """
-    Compute ΔL* margins between semantic role pairs
-    for Catppuccin palettes.
+    Compute ΔL* margins between semantic role pairs,
+    split by Catppuccin palette.
     """
     df = pd.read_csv(catppuccin_colors_csv)
 
-    # Expect columns: palette, element, L, a, b
-    if not {"palette", "element", "L"}.issubset(df.columns):
-        raise click.ClickException("CSV must contain palette, element, L columns")
+    required = {"palette", "element", "L"}
+    if not required.issubset(df.columns):
+        missing = ", ".join(sorted(required - set(df.columns)))
+        raise click.ClickException(f"Missing required columns: {missing}")
 
     # Map elements → roles
     df["role"] = df["element"].map(ROLE_MAP)
@@ -65,10 +71,13 @@ def compute_deltaL(catppuccin_colors_csv: Path, out: Path):
 
     rows = []
 
-    for palette, sub in df.groupby("palette"):
+    for palette, sub in df.groupby("palette", sort=True):
+        # Mean L* per role (palette-local)
+        role_means = sub.groupby("role")["L"].mean().reindex(ROLE_ORDER)
+
         for low, high in ROLE_PAIRS:
-            L_low = sub[sub.role == low]["L"].mean()
-            L_high = sub[sub.role == high]["L"].mean()
+            if pd.isna(role_means[low]) or pd.isna(role_means[high]):
+                continue  # skip incomplete palettes safely
 
             rows.append(
                 {
@@ -76,12 +85,14 @@ def compute_deltaL(catppuccin_colors_csv: Path, out: Path):
                     "low_role": low,
                     "high_role": high,
                     "pair": f"{low}→{high}",
-                    "delta_L": L_high - L_low,
+                    "delta_L": role_means[high] - role_means[low],
                 }
             )
 
-    out.write_text(pd.DataFrame(rows).to_csv(index=False))
-    click.echo(f"✓ Wrote {out} ({len(rows)} rows)")
+    out_df = pd.DataFrame(rows).sort_values(["palette", "pair"])
+    out_df.to_csv(out, index=False)
+
+    click.echo(f"✓ Wrote {out} ({len(out_df)} rows)")
 
 
 if __name__ == "__main__":
