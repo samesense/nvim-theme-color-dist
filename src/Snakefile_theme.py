@@ -8,7 +8,8 @@ rule extract_roles:
     shell:
         """
         python extract_colors.py {input.png} \
-            --constraints-json {input.cons}
+            --constraints-json {input.cons} \
+            --out-csv {output.colors}
         """
 
 rule assign_roles:

@@ -28,6 +28,13 @@ ROLE_ORDER = [
 ]
 
 
+def add_ranks(df):
+    df = df.copy()
+    df["L_rank"] = df.groupby("role")["L"].rank(pct=True, method="average")
+    df["chroma_rank"] = df.groupby("role")["chroma"].rank(pct=True, method="average")
+    return df
+
+
 # ------------------------------------------------------------
 # Color helpers
 # ------------------------------------------------------------
@@ -200,7 +207,15 @@ def render_role_pool(df):
 )
 @click.option("--max-pixels", default=100_000, show_default=True)
 @click.option("--quant", default=8, show_default=True)
-def extract_color_pool(image_path, constraints_json, palette, max_pixels, quant):
+@click.option(
+    "--out-csv",
+    default="color_pool.csv",
+    show_default=True,
+    type=click.Path(path_type=Path),
+)
+def extract_color_pool(
+    image_path, constraints_json, palette, max_pixels, quant, out_csv
+):
     """
     Build a role-aware color pool from a photo using learned palette constraints.
     """
@@ -276,6 +291,40 @@ def extract_color_pool(image_path, constraints_json, palette, max_pixels, quant)
     pool = pd.DataFrame(rows)
 
     render_role_pool(pool)
+
+    if pool.empty:
+        raise click.ClickException("No colors matched constraints")
+
+    # Add metadata
+    pool = pool.reset_index(drop=True)
+    pool["color_id"] = pool.index
+    pool["hex"] = pool.apply(lambda r: rgb_to_hex((r.R, r.G, r.B)), axis=1)
+    pool["palette"] = palette
+
+    # Add ranks for selector
+    pool = add_ranks(pool)
+
+    # Column order (authoritative)
+    cols = [
+        "color_id",
+        "palette",
+        "role",
+        "hex",
+        "R",
+        "G",
+        "B",
+        "L",
+        "a",
+        "b",
+        "chroma",
+        "hue",
+        "frequency",
+        "score",
+        "L_rank",
+        "chroma_rank",
+    ]
+
+    pool[cols].to_csv(out_csv, index=False)
 
 
 if __name__ == "__main__":
