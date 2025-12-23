@@ -1,4 +1,7 @@
-import itertools
+from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import click
 import numpy as np
@@ -9,10 +12,10 @@ from rich.table import Table
 from rich.text import Text
 
 # ============================================================
-# Constants
+# Catppuccin structure (semantic, fixed)
 # ============================================================
 
-CATPPUCCIN_ELEMENTS = {
+ELEMENTS_BY_ROLE = {
     "background": ["base", "mantle", "crust"],
     "surface": ["surface2", "surface1", "surface0"],
     "overlay": ["overlay2", "overlay1", "overlay0"],
@@ -22,8 +25,6 @@ CATPPUCCIN_ELEMENTS = {
     "accent_cool": ["teal", "sky", "sapphire", "blue", "lavender"],
     "accent_bridge": ["mauve"],
 }
-
-ACCENT_ROLES = ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]
 
 ROLE_ORDER = [
     "accent_red",
@@ -36,338 +37,281 @@ ROLE_ORDER = [
     "background",
 ]
 
-# --- HARD STRUCTURAL CONSTRAINTS ---
-MIN_TEXT_BG_DELTA = 35.0
-MIN_UI_BG_DELTA = 25.0
-MIN_SURFACE_BG_DELTA = 15.0
-MIN_OVERLAY_SURFACE_DELTA = 10.0
-MIN_TEXT_OVERLAY_DELTA = 20.0
-
-# --- RELAXED CONSTRAINTS (Tier 2) ---
-RELAX_OVERLAY_SURFACE_DELTA = 6.0
-RELAX_TEXT_OVERLAY_DELTA = 15.0
-
-# --- ACCENTS ---
-ACCENT_TEXT_GAP = 20.0
-ACCENT_IDEAL_OFFSET = 30.0
-ACCENT_SOFT_WIDTH = 12.0
-ACCENT_SOFT_WEIGHT = 0.5
-
+ACCENT_ROLES = [
+    "accent_red",
+    "accent_warm",
+    "accent_cool",
+    "accent_bridge",
+]
 
 # ============================================================
-# Geometry helpers
+# Helpers
 # ============================================================
 
 
-def lab(row):
-    return np.array([row["L"], row["a"], row["b"]])
+def hex_from_row(r) -> str:
+    return f"#{int(r.R):02x}{int(r.G):02x}{int(r.B):02x}"
 
 
-def delta_e(a, b):
-    return np.linalg.norm(lab(a) - lab(b))
-
-
-def _hex(row):
-    return f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}"
-
-
-def _with_idx(series):
-    d = series.to_dict()
-    d["_idx"] = series.name
-    return d
+def circ_dist(a, b) -> float:
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
 
 
 # ============================================================
-# Structural invariant checks
+# Constraint accessors
 # ============================================================
 
 
-def _struct_ok(bg, surface, overlay, text):
-    return (
-        (text["L"] - bg["L"] >= MIN_TEXT_BG_DELTA)
-        and (surface["L"] - bg["L"] >= MIN_SURFACE_BG_DELTA)
-        and (overlay["L"] - bg["L"] >= MIN_UI_BG_DELTA)
-        and (overlay["L"] - surface["L"] >= MIN_OVERLAY_SURFACE_DELTA)
-        and (text["L"] - overlay["L"] >= MIN_TEXT_OVERLAY_DELTA)
-        and (bg["L"] < surface["L"] < overlay["L"] < text["L"])
-    )
+def deltaL_target(constraints, pair):
+    return constraints["deltaL"][pair]["median"]
 
 
-def _struct_ok_relaxed(bg, surface, overlay, text):
-    return (
-        (text["L"] - bg["L"] >= MIN_TEXT_BG_DELTA)
-        and (overlay["L"] - bg["L"] >= MIN_UI_BG_DELTA)
-        and (overlay["L"] - surface["L"] >= RELAX_OVERLAY_SURFACE_DELTA)
-        and (text["L"] - overlay["L"] >= RELAX_TEXT_OVERLAY_DELTA)
-        and (bg["L"] < surface["L"] < overlay["L"] < text["L"])
-    )
+def deltaL_min(constraints, pair):
+    return constraints["deltaL"][pair]["q25"]
+
+
+def hue_center(constraints, role):
+    return constraints["hue"].get(role, {}).get("center")
+
+
+def hue_width(constraints, role):
+    return constraints["hue"].get(role, {}).get("width")
 
 
 # ============================================================
-# Debugging
+# Structural selection (required)
 # ============================================================
 
 
-def debug_structural(assignments, label):
-    print(f"\n=== {label} ===")
-    b = assignments["base"]
-    s = assignments["surface1"]
-    o = assignments["overlay1"]
-    t = assignments["text"]
+def pick_structural(pool: pd.DataFrame, constraints: dict):
+    bg_pool = pool[pool.role == "background"].sort_values("L")
+    surf_pool = pool[pool.role == "surface"].sort_values("L")
+    over_pool = pool[pool.role == "overlay"].sort_values("L")
+    text_pool = pool[pool.role == "text"].sort_values("L", ascending=False)
 
-    print(f"base     L* = {b['L']:6.1f}")
-    print(f"surface  L* = {s['L']:6.1f}   Δsurface-base = {s['L']-b['L']:5.1f}")
-    print(f"overlay  L* = {o['L']:6.1f}   Δoverlay-base = {o['L']-b['L']:5.1f}")
-    print(f"text     L* = {t['L']:6.1f}   Δtext-base    = {t['L']-b['L']:5.1f}")
-    print(f"overlay-surface Δ = {o['L']-s['L']:5.1f}")
-    print(f"text-overlay    Δ = {t['L']-o['L']:5.1f}")
+    best = None
+    best_score = float("inf")
 
-
-# ============================================================
-# Initial structural pick (unchanged logic)
-# ============================================================
-
-
-def pick_structural(df):
-    bg_pool = df[df.assigned_catppuccin_role == "background"].copy().sort_values("L")
-    text_pool = (
-        df[df.assigned_catppuccin_role == "text"]
-        .copy()
-        .sort_values("L", ascending=False)
-    )
-    surface_pool = df[df.assigned_catppuccin_role == "surface"].copy().sort_values("L")
-    overlay_pool = df[df.assigned_catppuccin_role == "overlay"].copy().sort_values("L")
-
-    if bg_pool.empty or text_pool.empty or surface_pool.empty or overlay_pool.empty:
-        raise RuntimeError("Missing one of background/surface/overlay/text colors")
-
-    bg_targets = bg_pool["L"].quantile([0.15, 0.20, 0.25]).values
-    text_targets = text_pool["L"].quantile([0.90, 0.85, 0.80]).values
-
-    def _nearest_k(pool, target_L, k=7):
-        idxs = (pool["L"] - target_L).abs().argsort().iloc[: min(k, len(pool))]
-        return [_with_idx(pool.iloc[i]) for i in idxs]
-
-    # Search a small neighborhood for a structural solution that actually satisfies constraints
-    for bg_L in bg_targets:
-        bg = _with_idx(bg_pool.iloc[(bg_pool["L"] - bg_L).abs().argsort().iloc[0]])
-
-        for t_L in text_targets:
-            tc = text_pool.loc[~text_pool.index.isin({bg["_idx"]})]
-            if tc.empty:
+    for bg in bg_pool.head(40).itertuples():
+        for text in text_pool.head(40).itertuples():
+            if text.L - bg.L < deltaL_min(constraints, "background→text"):
                 continue
 
-            text = _with_idx(tc.iloc[(tc["L"] - t_L).abs().argsort().iloc[0]])
-            if (text["L"] - bg["L"]) < MIN_TEXT_BG_DELTA:
-                continue
+            for surf in surf_pool.itertuples():
+                if not (bg.L < surf.L < text.L):
+                    continue
 
-            surface_target = (bg["L"] + text["L"]) / 2
-            surface_cands = _nearest_k(surface_pool, surface_target, k=9)
+                for over in over_pool.itertuples():
+                    if not (surf.L < over.L < text.L):
+                        continue
 
-            for surface in surface_cands:
-                overlay_target = (surface["L"] + text["L"]) / 2
-                overlay_cands = _nearest_k(overlay_pool, overlay_target, k=9)
+                    score = (
+                        abs(
+                            (text.L - bg.L)
+                            - deltaL_target(constraints, "background→text")
+                        )
+                        + abs(
+                            (surf.L - bg.L)
+                            - deltaL_target(constraints, "background→surface")
+                        )
+                        + abs(
+                            (over.L - surf.L)
+                            - deltaL_target(constraints, "surface→overlay")
+                        )
+                        + abs(
+                            (text.L - over.L)
+                            - deltaL_target(constraints, "overlay→text")
+                        )
+                        - 2.0
+                        * (
+                            bg.frequency
+                            + surf.frequency
+                            + over.frequency
+                            + text.frequency
+                        )
+                    )
 
-                for overlay in overlay_cands:
-                    cand = {
-                        "base": bg,
-                        "surface1": surface,
-                        "overlay1": overlay,
-                        "text": text,
-                    }
+                    if score < best_score:
+                        best_score = score
+                        best = {
+                            "base": bg,
+                            "surface1": surf,
+                            "overlay1": over,
+                            "text": text,
+                        }
 
-                    if _struct_ok(bg, surface, overlay, text):
-                        return cand
-
-                    # If Tier-1 fails, allow Tier-2 here so you don't return junk early
-                    if _struct_ok_relaxed(bg, surface, overlay, text):
-                        return cand
-
-    # Deterministic fallback (previous behavior), but still tries to be sensible
-    bg = _with_idx(bg_pool.iloc[0])
-    text = _with_idx(text_pool.iloc[0])
-
-    surface = _with_idx(
-        surface_pool.iloc[
-            (surface_pool["L"] - (bg["L"] + text["L"]) / 2).abs().argsort().iloc[0]
-        ]
-    )
-    overlay = _with_idx(
-        overlay_pool.iloc[
-            (overlay_pool["L"] - (surface["L"] + text["L"]) / 2).abs().argsort().iloc[0]
-        ]
-    )
-
-    return {"base": bg, "surface1": surface, "overlay1": overlay, "text": text}
-
-
-# ============================================================
-# Tier-3 fallback: single midtone
-# ============================================================
-
-
-def fallback_single_midtone(assignments, df):
-    bg = assignments["base"]
-    text = assignments["text"]
-
-    mid_pool = df[df.assigned_catppuccin_role.isin(["surface", "overlay"])].copy()
-    mid_pool["bg_sep"] = mid_pool["L"] - bg["L"]
-    mid_pool["text_sep"] = text["L"] - mid_pool["L"]
-
-    mid_pool = mid_pool[
-        (mid_pool["bg_sep"] >= MIN_UI_BG_DELTA)
-        & (mid_pool["text_sep"] >= MIN_TEXT_OVERLAY_DELTA)
-    ]
-
-    if mid_pool.empty:
-        return None
-
-    mid = mid_pool.sort_values(by=["bg_sep", "text_sep"], ascending=[True, True]).iloc[
-        0
-    ]
-
-    return {
-        "base": bg,
-        "surface1": mid.to_dict(),
-        "overlay1": mid.to_dict(),
-        "text": text,
-    }
+    return best or {}
 
 
 # ============================================================
-# Accent assignment (unchanged)
+# Fill remaining UI elements (best effort)
 # ============================================================
 
 
-def pick_accents(df, assignments):
-    text_L = float(assignments["text"]["L"])
-    overlay_L = float(assignments["overlay1"]["L"])
-    ideal_L = text_L - ACCENT_IDEAL_OFFSET
+def fill_ui(pool, assignments):
+    used = {hex_from_row(v) for v in assignments.values()}
 
-    used_idxs = {v.get("_idx") for v in assignments.values() if "_idx" in v}
-
-    for role in ACCENT_ROLES:
-        sub = df[df.assigned_catppuccin_role == role].copy()
+    def pick(role, target_L):
+        sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
         if sub.empty:
-            continue
+            return None
+        sub["dist"] = (sub.L - target_L).abs()
+        r = sub.sort_values(["dist", "score"], ascending=[True, False]).iloc[0]
+        used.add(r.hex)
+        return r
 
-        elems = CATPPUCCIN_ELEMENTS[role]
-        sub = sub.reset_index().rename(columns={"index": "_idx"})
-        sub = sub.loc[~sub["_idx"].isin(used_idxs)]
-        sub = sub.sort_values("frequency", ascending=False).head(50)
+    if "base" not in assignments or "surface1" not in assignments:
+        return assignments
 
-        if len(sub) < len(elems):
-            continue
+    base = assignments["base"]
+    surf = assignments["surface1"]
+    over = assignments.get("overlay1")
+    text = assignments.get("text")
 
-        best = None
-        best_score = -np.inf
-
-        for rows in itertools.combinations(sub.to_dict("records"), len(elems)):
-            if any(r["_idx"] in used_idxs for r in rows):
-                continue
-
-            if any(r["L"] > text_L - 5 or r["L"] < overlay_L + 5 for r in rows):
-                continue
-
-            score = sum(delta_e(a, b) for a, b in itertools.combinations(rows, 2))
-
-            for r in rows:
-                score -= 0.3 * delta_e(r, assignments["text"])
-                score -= 0.2 * delta_e(r, assignments["base"])
-
-                if r["L"] > text_L - ACCENT_TEXT_GAP:
-                    score -= 100
-
-                dist = abs(r["L"] - ideal_L)
-                score -= (dist / ACCENT_SOFT_WIDTH) ** 2 * ACCENT_SOFT_WEIGHT
-
-            if score > best_score:
-                best_score = score
-                best = rows
-
-        if best:
-            assignments.update(dict(zip(elems, best)))
-            used_idxs.update(r["_idx"] for r in best)
+    for k, r in {
+        "mantle": pick("background", base.L + 4),
+        "crust": pick("background", base.L - 4),
+        "surface0": pick("surface", surf.L - 6),
+        "surface2": pick("surface", surf.L + 6),
+        "overlay0": pick("overlay", over.L - 6) if over is not None else None,
+        "overlay2": pick("overlay", over.L + 6) if over is not None else None,
+        "subtext1": pick("text", text.L - 6) if text is not None else None,
+        "subtext0": pick("text", text.L - 12) if text is not None else None,
+    }.items():
+        if r is not None:
+            assignments[k] = r
 
     return assignments
 
 
 # ============================================================
-# Rich display
+# Accent selection (non-fatal, greedy)
 # ============================================================
 
 
-def render_elements(assignments, theme_name):
+def pick_accents(pool, assignments, constraints):
+    used = {hex_from_row(v) for v in assignments.values()}
+
+    for role in ACCENT_ROLES:
+        elems = ELEMENTS_BY_ROLE[role]
+        sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
+
+        if sub.empty:
+            continue  # optional role
+
+        h0 = hue_center(constraints, role)
+        w = hue_width(constraints, role)
+
+        # compute hue distance
+        sub["hue_dist"] = sub.hue.apply(lambda h: circ_dist(h, h0))
+
+        # strict window first
+        cand = sub[sub.hue_dist <= w / 2]
+
+        # relax if empty
+        if cand.empty:
+            cand = sub
+
+        cand = cand.sort_values(["frequency", "score"], ascending=[False, False])
+
+        for elem in elems:
+            if cand.empty:
+                break
+
+            row = cand.iloc[0]
+            assignments[elem] = row
+            used.add(row.hex)
+
+            cand = cand[cand.hex != row.hex]
+
+    return assignments
+
+
+def render(assignments, name):
     console = Console()
-    table = Table(title=theme_name, show_header=True, header_style="bold")
+    table = Table(title=name)
 
-    table.add_column("Element", style="cyan")
-    table.add_column("Semantic hex")
-    table.add_column("Semantic")
-    table.add_column("Final hex")
-    table.add_column("Final")
+    table.add_column("Element")
+    table.add_column("Hex")
+    table.add_column(" ")
     table.add_column("L*")
+    table.add_column("C*")
+    table.add_column("Hue")
 
-    for elem, row in assignments.items():
-        h = _hex(row)
-        sw = Text("      ", style=Style(bgcolor=h))
-        table.add_row(elem, h, sw, h, sw, f"{row['L']:.1f}")
+    for role in ROLE_ORDER:
+        for elem in ELEMENTS_BY_ROLE[role]:
+            r = assignments.get(elem)
+            if r is None:
+                table.add_row(elem, "[dim]—[/dim]", "", "", "", "")
+                continue
 
-    console.print("\n[bold]Semantic vs Final Theme Colors[/bold]\n")
+            h = hex_from_row(r)
+            table.add_row(
+                elem,
+                h,
+                Text("   ", style=Style(bgcolor=h)),
+                f"{r.L:.1f}",
+                f"{r.chroma:.1f}",
+                f"{r.hue:.0f}°",
+            )
+
     console.print(table)
 
 
-# ============================================================
-# CLI
-# ============================================================
+def row_to_dict(r):
+    if hasattr(r, "_asdict"):  # namedtuple
+        return dict(r._asdict())
+    if isinstance(r, pd.Series):  # pandas row
+        return r.to_dict()
+    raise TypeError(f"Unsupported row type: {type(r)}")
 
 
 @click.command()
-@click.argument("role_colors_csv", type=click.Path(exists=True))
-@click.option("--out-lua", default="theme.lua")
+@click.argument("color_pool_csv", type=click.Path(exists=True, path_type=Path))
+@click.option("--constraints-json", required=True, type=click.Path(exists=True))
 @click.option("--theme-name", default="painting")
-def assign_elements(role_colors_csv, out_lua, theme_name):
-    df = pd.read_csv(role_colors_csv)
+@click.option("--out-json", default="assignments.json", show_default=True)
+def main(color_pool_csv, constraints_json, theme_name, out_json):
+    pool = pd.read_csv(color_pool_csv)
+    pool["hex"] = pool.apply(hex_from_row, axis=1)
 
-    assignments = pick_structural(df)
-    debug_structural(assignments, "PRIMARY STRUCTURAL ASSIGNMENT")
+    constraints_all = json.loads(Path(constraints_json).read_text())
+    palette = pool.palette.iloc[0]
 
-    if not _struct_ok(
-        assignments["base"],
-        assignments["surface1"],
-        assignments["overlay1"],
-        assignments["text"],
-    ):
-        print("⚠️  Tier 1 failed → trying relaxed constraints")
+    constraints = {
+        "deltaL": constraints_all["constraints"]["deltaL"][palette],
+        "chroma": constraints_all["constraints"]["chroma"][palette],
+        "hue": constraints_all["constraints"]["hue"][palette],
+    }
 
-        if not _struct_ok_relaxed(
-            assignments["base"],
-            assignments["surface1"],
-            assignments["overlay1"],
-            assignments["text"],
-        ):
-            print("⚠️  Tier 2 failed → trying single-midtone fallback")
-            fb = fallback_single_midtone(assignments, df)
-            if fb is None:
-                raise RuntimeError(
-                    "Rejected palette: no readable structural configuration found"
-                )
-            assignments = fb
+    assignments = pick_structural(pool, constraints)
+    assignments = fill_ui(pool, assignments)
+    assignments = pick_accents(pool, assignments, constraints)
 
-    debug_structural(assignments, "FINAL STRUCTURAL ASSIGNMENT")
+    # Record missing elements
+    missing = [
+        elem
+        for role in ROLE_ORDER
+        for elem in ELEMENTS_BY_ROLE[role]
+        if elem not in assignments
+    ]
 
-    assignments = pick_accents(df, assignments)
-    render_elements(assignments, theme_name)
+    assigned_out = {k: row_to_dict(v) for k, v in assignments.items()}
 
-    with open(out_lua, "w") as f:
-        f.write(f"local {theme_name} = {{\n")
-        for role in ROLE_ORDER:
-            for elem in CATPPUCCIN_ELEMENTS[role]:
-                row = assignments.get(elem)
-                if row:
-                    f.write(f"  {elem} = '{_hex(row)}',\n")
-        f.write("}\n\nreturn " + theme_name + "\n")
+    Path(out_json).write_text(
+        json.dumps(
+            {
+                "palette": palette,
+                "assigned": assigned_out,
+                "missing": missing,
+            },
+            indent=2,
+        )
+    )
+
+    render(assignments, theme_name)
 
 
 if __name__ == "__main__":
-    assign_elements()
+    main()
