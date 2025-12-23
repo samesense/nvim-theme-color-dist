@@ -41,6 +41,19 @@
       font-size: 1.4rem;
     }
 
+    .source-image {
+      margin-top: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .source-image img {
+      max-width: 640px;
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+
     .section {
       margin-top: 1.5rem;
     }
@@ -92,107 +105,120 @@
 
   <h1>Neovim Savitsky Museum Theme Gallery</h1>
 
-<div id="gallery">Loading…</div>
+  <div id="gallery">Loading…</div>
 
-<footer>
-  Auto-generated from Lua themes.
-</footer>
+  <footer>
+    Auto-generated from Lua themes.
+  </footer>
 
-<script>
-async function loadThemes() {
-  const res = await fetch("themes.json");
-  const data = await res.json();
-  return data;
-}
-
-function makeSwatch(hex, label = "") {
-  const wrap = document.createElement("div");
-  wrap.className = "swatch";
-
-  const box = document.createElement("div");
-  box.className = "swatch-box";
-  box.style.background = hex;
-
-  const hexLabel = document.createElement("div");
-  hexLabel.className = "hex";
-  hexLabel.textContent = hex;
-
-  wrap.appendChild(box);
-  if (label) {
-    const name = document.createElement("div");
-    name.textContent = label;
-    wrap.appendChild(name);
-  }
-  wrap.appendChild(hexLabel);
-
-  return wrap;
-}
-
-function renderTheme(name, theme) {
-  const container = document.createElement("div");
-  container.className = "theme";
-
-  const title = document.createElement("h2");
-  title.textContent = name;
-  container.appendChild(title);
-
-  // Core UI
-  if (theme.core && Object.keys(theme.core).length) {
-    const section = document.createElement("div");
-    section.className = "section";
-
-    const h = document.createElement("h3");
-    h.textContent = "Core UI";
-    section.appendChild(h);
-
-    const row = document.createElement("div");
-    row.className = "swatches";
-
-    for (const [k, hex] of Object.entries(theme.core)) {
-      row.appendChild(makeSwatch(hex, k));
+  <script>
+    async function loadThemes() {
+      const res = await fetch("themes.json");
+      const data = await res.json();
+      return data;
     }
 
-    section.appendChild(row);
-    container.appendChild(section);
-  }
+    function makeSwatch(hex, label = "") {
+      const wrap = document.createElement("div");
+      wrap.className = "swatch";
 
-  // Accents
-  if (theme.accents && Object.keys(theme.accents).length) {
-    const section = document.createElement("div");
-    section.className = "section";
+      const box = document.createElement("div");
+      box.className = "swatch-box";
+      box.style.background = hex;
 
-    const h = document.createElement("h3");
-    h.textContent = "Accents";
-    section.appendChild(h);
+      const hexLabel = document.createElement("div");
+      hexLabel.className = "hex";
+      hexLabel.textContent = hex;
 
-    const row = document.createElement("div");
-    row.className = "swatches";
+      wrap.appendChild(box);
+      if (label) {
+        const name = document.createElement("div");
+        name.textContent = label;
+        wrap.appendChild(name);
+      }
+      wrap.appendChild(hexLabel);
 
-    for (const [group, colors] of Object.entries(theme.accents)) {
-      for (const hex of colors) {
-        row.appendChild(makeSwatch(hex, group));
+      return wrap;
+    }
+
+    function renderTheme(name, theme) {
+      const container = document.createElement("div");
+      container.className = "theme";
+
+      const title = document.createElement("h2");
+      title.textContent = name;
+      container.appendChild(title);
+
+      /* Source image */
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "source-image";
+
+      const img = document.createElement("img");
+      img.src = `../data/raw/photos/${name}.png`;
+      img.alt = `${name} source image`;
+      img.onerror = () => imgWrap.remove();
+
+      imgWrap.appendChild(img);
+      container.appendChild(imgWrap);
+
+      /* Core UI */
+      if (theme.core && Object.keys(theme.core).length) {
+        const section = document.createElement("div");
+        section.className = "section";
+
+        const h = document.createElement("h3");
+        h.textContent = "Core UI";
+        section.appendChild(h);
+
+        const row = document.createElement("div");
+        row.className = "swatches";
+
+        for (const [k, hex] of Object.entries(theme.core)) {
+          row.appendChild(makeSwatch(hex, k));
+        }
+
+        section.appendChild(row);
+        container.appendChild(section);
+      }
+
+      /* Accents */
+      if (theme.accents && Object.keys(theme.accents).length) {
+        const section = document.createElement("div");
+        section.className = "section";
+
+        const h = document.createElement("h3");
+        h.textContent = "Accents";
+        section.appendChild(h);
+
+        const row = document.createElement("div");
+        row.className = "swatches";
+
+        for (const [group, colors] of Object.entries(theme.accents)) {
+          for (const hex of colors) {
+            row.appendChild(makeSwatch(hex, group));
+          }
+        }
+
+        section.appendChild(row);
+        container.appendChild(section);
+      }
+
+      return container;
+    }
+
+    async function main() {
+      const gallery = document.getElementById("gallery");
+      gallery.textContent = "";
+
+      const themes = await loadThemes();
+
+      for (const [name, theme] of Object.entries(themes)) {
+        gallery.appendChild(renderTheme(name, theme));
       }
     }
 
-    section.appendChild(row);
-    container.appendChild(section);
-  }
+    main();
+  </script>
 
-  return container;
-}
-
-async function main() {
-  const gallery = document.getElementById("gallery");
-  gallery.textContent = "";
-
-  const themes = await loadThemes();
-
-  for (const [name, theme] of Object.entries(themes)) {
-    gallery.appendChild(renderTheme(name, theme));
-  }
-}
-
-main();
-</script>
 </body>
 </html>

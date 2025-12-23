@@ -39,6 +39,27 @@ LUA_KV_RE = re.compile(r"(\w+)\s*=\s*'(#?[0-9a-fA-F]{6})'")
 # ============================================================
 
 
+def render_source_image(
+    theme_name: str,
+    out_file: Path,
+    photos_dir: Path = Path("data/raw/photos"),
+) -> str:
+    img_path = photos_dir / f"{theme_name}.png"
+    if not img_path.exists():
+        return "_Source image not found._"
+
+    # Compute path relative to docs/themes.md
+    rel = img_path.relative_to(out_file.parent.resolve())
+
+    return (
+        "<div>"
+        f"<img src='{rel.as_posix()}' "
+        "alt='Source image' "
+        "style='max-width: 640px; width: 100%; border-radius: 6px;' />"
+        "</div>"
+    )
+
+
 def parse_lua_theme(path: Path) -> dict[str, str]:
     colors = {}
     for k, v in LUA_KV_RE.findall(path.read_text()):
@@ -122,10 +143,14 @@ def render_accent_table(colors: dict[str, str]) -> str:
     )
 
 
-def render_theme(name: str, colors: dict[str, str]) -> str:
+def render_theme(name: str, colors: dict[str, str], out_file: Path) -> str:
     return "\n".join(
         [
             f"## 🎨 {name}",
+            "",
+            "### Source image",
+            "",
+            render_source_image(name, out_file),
             "",
             "### Core UI",
             "",
@@ -137,11 +162,6 @@ def render_theme(name: str, colors: dict[str, str]) -> str:
             "",
         ]
     )
-
-
-# ============================================================
-# CLI
-# ============================================================
 
 
 @click.command()
@@ -170,7 +190,7 @@ def render_themes(theme_dir: Path, out: Path):
     for lua in lua_files:
         colors = parse_lua_theme(lua)
         name = lua.stem.replace("_theme", "")
-        md.append(render_theme(name, colors))
+        md.append(render_theme(name, colors, out))
 
     out.write_text("\n".join(md))
     click.echo(f"✓ Wrote {out}")
