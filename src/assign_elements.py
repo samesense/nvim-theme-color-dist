@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import json
 from pathlib import Path
 
@@ -54,22 +53,18 @@ def hex_from_row(r) -> str:
     return f"#{int(r.R):02x}{int(r.G):02x}{int(r.B):02x}"
 
 
-def delta_e(a, b) -> float:
-    return float(np.linalg.norm(np.array([a.L, a.a, a.b]) - np.array([b.L, b.a, b.b])))
-
-
 def circ_dist(a, b) -> float:
     d = abs(a - b) % 360
     return min(d, 360 - d)
 
 
 # ============================================================
-# Constraint accessors (palette-scoped)
+# Constraint accessors
 # ============================================================
 
 
-def deltaL_target(constraints, pair, key="median"):
-    return constraints["deltaL"][pair][key]
+def deltaL_target(constraints, pair):
+    return constraints["deltaL"][pair]["median"]
 
 
 def deltaL_min(constraints, pair):
@@ -77,15 +72,15 @@ def deltaL_min(constraints, pair):
 
 
 def hue_center(constraints, role):
-    return constraints["hue"][role]["center"]
+    return constraints["hue"].get(role, {}).get("center")
 
 
 def hue_width(constraints, role):
-    return constraints["hue"][role]["width"]
+    return constraints["hue"].get(role, {}).get("width")
 
 
 # ============================================================
-# Structural selection
+# Structural selection (required)
 # ============================================================
 
 
@@ -146,14 +141,11 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
                             "text": text,
                         }
 
-    if best is None:
-        raise RuntimeError("No valid structural configuration found")
-
-    return best
+    return best or {}
 
 
 # ============================================================
-# Fill remaining UI elements
+# Fill remaining UI elements (best effort)
 # ============================================================
 
 
@@ -162,33 +154,39 @@ def fill_ui(pool, assignments):
 
     def pick(role, target_L):
         sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
+        if sub.empty:
+            return None
         sub["dist"] = (sub.L - target_L).abs()
         r = sub.sort_values(["dist", "score"], ascending=[True, False]).iloc[0]
         used.add(r.hex)
         return r
 
+    if "base" not in assignments or "surface1" not in assignments:
+        return assignments
+
     base = assignments["base"]
     surf = assignments["surface1"]
-    over = assignments["overlay1"]
-    text = assignments["text"]
+    over = assignments.get("overlay1")
+    text = assignments.get("text")
 
-    assignments["mantle"] = pick("background", base.L + 4)
-    assignments["crust"] = pick("background", base.L - 4)
-
-    assignments["surface0"] = pick("surface", surf.L - 6)
-    assignments["surface2"] = pick("surface", surf.L + 6)
-
-    assignments["overlay0"] = pick("overlay", over.L - 6)
-    assignments["overlay2"] = pick("overlay", over.L + 6)
-
-    assignments["subtext1"] = pick("text", text.L - 6)
-    assignments["subtext0"] = pick("text", text.L - 12)
+    for k, r in {
+        "mantle": pick("background", base.L + 4),
+        "crust": pick("background", base.L - 4),
+        "surface0": pick("surface", surf.L - 6),
+        "surface2": pick("surface", surf.L + 6),
+        "overlay0": pick("overlay", over.L - 6) if over is not None else None,
+        "overlay2": pick("overlay", over.L + 6) if over is not None else None,
+        "subtext1": pick("text", text.L - 6) if text is not None else None,
+        "subtext0": pick("text", text.L - 12) if text is not None else None,
+    }.items():
+        if r is not None:
+            assignments[k] = r
 
     return assignments
 
 
 # ============================================================
-# Accent selection (never fatal)
+# Accent selection (non-fatal, greedy)
 # ============================================================
 
 
@@ -200,35 +198,34 @@ def pick_accents(pool, assignments, constraints):
         sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
 
         if sub.empty:
-            continue  # fully optional role
+            continue  # optional role
 
         h0 = hue_center(constraints, role)
         w = hue_width(constraints, role)
 
+        # compute hue distance
         sub["hue_dist"] = sub.hue.apply(lambda h: circ_dist(h, h0))
+
+        # strict window first
         cand = sub[sub.hue_dist <= w / 2]
 
-        # if hue window fails, relax
+        # relax if empty
         if cand.empty:
-            cand = sub.copy()
+            cand = sub
 
         cand = cand.sort_values(["frequency", "score"], ascending=[False, False])
 
         for elem in elems:
-            row = cand.iloc[0]
-            assignments[elem] = row
-            used.add(row.hex)
-            cand = cand[cand.hex != row.hex]
-
             if cand.empty:
                 break
 
+            row = cand.iloc[0]
+            assignments[elem] = row
+            used.add(row.hex)
+
+            cand = cand[cand.hex != row.hex]
+
     return assignments
-
-
-# ============================================================
-# Output
-# ============================================================
 
 
 def render(assignments, name):
@@ -244,7 +241,11 @@ def render(assignments, name):
 
     for role in ROLE_ORDER:
         for elem in ELEMENTS_BY_ROLE[role]:
-            r = assignments[elem]
+            r = assignments.get(elem)
+            if r is None:
+                table.add_row(elem, "[dim]—[/dim]", "", "", "", "")
+                continue
+
             h = hex_from_row(r)
             table.add_row(
                 elem,
@@ -258,13 +259,20 @@ def render(assignments, name):
     console.print(table)
 
 
+def row_to_dict(r):
+    if hasattr(r, "_asdict"):  # namedtuple
+        return dict(r._asdict())
+    if isinstance(r, pd.Series):  # pandas row
+        return r.to_dict()
+    raise TypeError(f"Unsupported row type: {type(r)}")
+
+
 @click.command()
 @click.argument("color_pool_csv", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--constraints-json", required=True, type=click.Path(exists=True, path_type=Path)
-)
+@click.option("--constraints-json", required=True, type=click.Path(exists=True))
 @click.option("--theme-name", default="painting")
-def main(color_pool_csv, constraints_json, theme_name):
+@click.option("--out-json", default="assignments.json", show_default=True)
+def main(color_pool_csv, constraints_json, theme_name, out_json):
     pool = pd.read_csv(color_pool_csv)
     pool["hex"] = pool.apply(hex_from_row, axis=1)
 
@@ -280,6 +288,27 @@ def main(color_pool_csv, constraints_json, theme_name):
     assignments = pick_structural(pool, constraints)
     assignments = fill_ui(pool, assignments)
     assignments = pick_accents(pool, assignments, constraints)
+
+    # Record missing elements
+    missing = [
+        elem
+        for role in ROLE_ORDER
+        for elem in ELEMENTS_BY_ROLE[role]
+        if elem not in assignments
+    ]
+
+    assigned_out = {k: row_to_dict(v) for k, v in assignments.items()}
+
+    Path(out_json).write_text(
+        json.dumps(
+            {
+                "palette": palette,
+                "assigned": assigned_out,
+                "missing": missing,
+            },
+            indent=2,
+        )
+    )
 
     render(assignments, theme_name)
 
