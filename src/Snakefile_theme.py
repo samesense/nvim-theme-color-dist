@@ -1,18 +1,14 @@
 rule extract_roles:
     '''get color clusters from png'''
     input:
-        RAW / 'photos/{img}.png', 
+        png = RAW / 'photos/{img}.png', 
+        cons = INT / "constraints/palette_constraints.json",
     output:
         colors = INT / "tmp/{img}_colors.csv",
-        dendrogram = INT / "tmp/{img}_dendrogram.png",
-    params:
-        out_prefix = INTs + "tmp/{img}",
-        num_roles = 8,
     shell:
         """
-        python role_clusters.py {input} \
-            --roles {params.num_roles} \
-            --out-prefix {params.out_prefix}
+        python extract_colors.py {input.png} \
+            --constraints-json {input.cons}
         """
 
 rule assign_roles:

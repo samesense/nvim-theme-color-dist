@@ -87,6 +87,7 @@ rule build_palette_constraints:
     learned from Catppuccin palettes.
     """
     input:
+        colors = INT / 'cap_colors.csv',
         deltaL = INT / "constraints/deltaL_margins.csv",
         chroma = INT / "constraints/chroma_role.csv",
         hue    = INT / "constraints/hue.csv",
@@ -95,6 +96,7 @@ rule build_palette_constraints:
     shell:
         """
         python build_constraints.py \
+            --cap-colors-csv {input.colors} \
             --deltal-csv {input.deltaL} \
             --chroma-csv {input.chroma} \
             --hue-csv {input.hue} \
