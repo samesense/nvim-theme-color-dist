@@ -13,3 +13,4 @@ rule all:
         END / "figures/deltaL_margins.png",
         END / "figures/chroma_by_role.png",
         END / "figures/hue.png",
+        INT / "constraints/palette_constraints.json",

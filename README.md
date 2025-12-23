@@ -78,3 +78,9 @@ surprisingly well into editor UI palettes.
 │  ├─ index.html
 │  └─ themes.json
 └─ README.md
+
+## Todo
+### not yet modeling:
+* contrast ratios (WCAG)
+* spatial adjacency (UI context)
+* perceptual salience interactions (future)

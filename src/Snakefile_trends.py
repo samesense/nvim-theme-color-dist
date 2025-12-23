@@ -80,3 +80,23 @@ rule plot_hue_trend_data:
         python plot_hue_trend.py \
             {input} {output}
         """
+
+rule build_palette_constraints:
+    """
+    Build palette-level constraints (lightness, chroma, hue, polarity)
+    learned from Catppuccin palettes.
+    """
+    input:
+        deltaL = INT / "constraints/deltaL_margins.csv",
+        chroma = INT / "constraints/chroma_role.csv",
+        hue    = INT / "constraints/hue.csv",
+    output:
+        json = INT / "constraints/palette_constraints.json",
+    shell:
+        """
+        python build_constraints.py \
+            --deltal-csv {input.deltaL} \
+            --chroma-csv {input.chroma} \
+            --hue-csv {input.hue} \
+            --out {output.json}
+        """
