@@ -23,6 +23,14 @@ def circular_mean_deg(deg):
     )
 
 
+def circular_width_deg(deg, center, q=90):
+    """
+    Robust circular width: percentile of angular distance from center.
+    """
+    dists = np.abs((deg - center + 180) % 360 - 180)
+    return float(np.percentile(dists, q) * 2)
+
+
 # ------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------
@@ -70,84 +78,87 @@ def build_constraints(cap_colors_csv, deltal_csv, chroma_csv, hue_csv, out):
     chroma = pd.read_csv(chroma_csv)
     hue = pd.read_csv(hue_csv)
 
-    constraints = {}
-
-    # ========================================================
+    # --------------------------------------------------------
     # 1. Palette PROFILES (absolute identity)
-    # ========================================================
+    # --------------------------------------------------------
 
     profiles = {}
 
     for palette, sub in cap.groupby("palette"):
+        hues = np.degrees(np.arctan2(sub["b"], sub["a"])) % 360
         profiles[palette] = {
             "L_median": float(sub["L"].median()),
             "L_range": float(sub["L"].quantile(0.9) - sub["L"].quantile(0.1)),
             "chroma_median": float(np.sqrt(sub["a"] ** 2 + sub["b"] ** 2).median()),
-            "hue_entropy": hue_entropy(
-                np.degrees(np.arctan2(sub["b"], sub["a"])) % 360
-            ),
+            "hue_entropy": hue_entropy(hues),
         }
 
-    # Polarity (derived once, globally correct)
+    # --------------------------------------------------------
+    # 2. Polarity (derived, palette-scoped)
+    # --------------------------------------------------------
+
     polarity = {}
     for palette, sub in deltaL.groupby("palette"):
         bg_text = sub[sub["pair"] == "background→text"]["delta_L"].median()
         polarity[palette] = "dark" if bg_text > 0 else "light"
 
-    # ========================================================
-    # 2. Lightness constraints (absolute ΔL*)
-    # ========================================================
+    # --------------------------------------------------------
+    # 3. ΔL* constraints (palette + role pair)
+    # --------------------------------------------------------
 
-    lightness = {}
+    deltaL_constraints = {}
     deltaL["abs_delta_L"] = deltaL["delta_L"].abs()
 
-    for pair, sub in deltaL.groupby("pair"):
-        lightness[pair] = {
-            "min": float(sub["abs_delta_L"].quantile(0.05)),
+    for (palette, pair), sub in deltaL.groupby(["palette", "pair"]):
+        deltaL_constraints.setdefault(palette, {})[pair] = {
+            "q25": float(sub["abs_delta_L"].quantile(0.25)),
             "median": float(sub["abs_delta_L"].median()),
-            "max": float(sub["abs_delta_L"].quantile(0.95)),
+            "q75": float(sub["abs_delta_L"].quantile(0.75)),
         }
 
-    # ========================================================
-    # 3. Chroma constraints (per role)
-    # ========================================================
+    # --------------------------------------------------------
+    # 4. Chroma constraints (palette + role)
+    # --------------------------------------------------------
 
     chroma_constraints = {}
-    for role, sub in chroma.groupby("role"):
-        chroma_constraints[role] = {
+
+    for (palette, role), sub in chroma.groupby(["palette", "role"]):
+        chroma_constraints.setdefault(palette, {})[role] = {
             "q25": float(sub["chroma"].quantile(0.25)),
+            "median": float(sub["chroma"].median()),
             "q75": float(sub["chroma"].quantile(0.75)),
         }
 
-    # ========================================================
-    # 4. Hue constraints (circular, per role)
-    # ========================================================
+    # --------------------------------------------------------
+    # 5. Hue constraints (palette + role, circular)
+    # --------------------------------------------------------
 
     hue_constraints = {}
-    for role, sub in hue.groupby("role"):
-        center = circular_mean_deg(sub["hue_deg"].values)
-        width = float(
-            np.percentile(sub["hue_deg"], 90) - np.percentile(sub["hue_deg"], 10)
-        )
 
-        hue_constraints[role] = {
+    for (palette, role), sub in hue.groupby(["palette", "role"]):
+        center = circular_mean_deg(sub["hue_deg"].values)
+        width = circular_width_deg(sub["hue_deg"].values, center)
+
+        hue_constraints.setdefault(palette, {})[role] = {
             "center": center,
             "width": width,
         }
 
-    # ========================================================
+    # --------------------------------------------------------
     # Final JSON
-    # ========================================================
+    # --------------------------------------------------------
 
-    constraints["profiles"] = profiles
-    constraints["polarity"] = polarity
-    constraints["constraints"] = {
-        "lightness": lightness,
-        "chroma": chroma_constraints,
-        "hue": hue_constraints,
+    out_data = {
+        "profiles": profiles,
+        "polarity": polarity,
+        "constraints": {
+            "deltaL": deltaL_constraints,
+            "chroma": chroma_constraints,
+            "hue": hue_constraints,
+        },
     }
 
-    out.write_text(json.dumps(constraints, indent=2))
+    out.write_text(json.dumps(out_data, indent=2))
     click.echo(f"✓ Wrote {out}")
     click.echo(f"✓ Palettes: {', '.join(sorted(profiles))}")
 

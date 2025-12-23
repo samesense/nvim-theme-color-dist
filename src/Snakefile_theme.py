@@ -12,28 +12,27 @@ rule extract_roles:
             --out-csv {output.colors}
         """
 
-rule assign_roles:
-    input:
-        colors = INT / "tmp/{img}_colors.csv",
-        catppuccin = RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
-    output:
-        assignment = INT / "tmp/{img}_role_assignment.csv"
-    params:
-        palette='mocha',
-    shell:
-        """
-        python assign_roles.py \
-            {input.colors} \
-            {input.catppuccin} \
-            {output} \
-            --palette {params.palette}
-        """
+# rule assign_roles:
+#     input:
+#         colors = INT / "tmp/{img}_colors.csv",
+#         catppuccin = RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
+#     output:
+#         assignment = INT / "tmp/{img}_role_assignment.csv"
+#     params:
+#         palette='mocha',
+#     shell:
+#         """
+#         python assign_roles.py \
+#             {input.colors} \
+#             {input.catppuccin} \
+#             {output} \
+#             --palette {params.palette}
+#         """
 
 rule assign_elements:
     input:
         colors = INT / "tmp/{img}_colors.csv",
-        assignment = INT / "tmp/{img}_role_assignment.csv",
-        catppuccin = RAW / 'nvim/lua/catppuccin/palettes/mocha.csv',
+        cons = INT / "constraints/palette_constraints.json",
     output:
         luaout = END / "{img}_theme.lua",
     params:
@@ -41,7 +40,7 @@ rule assign_elements:
     shell:
         """
         python assign_elements.py \
-            {input.assignment} \
-            --out-lua {output.luaout} \
+            {input.colors} \
+            --constraints-json {input.cons}
             --theme-name {params.tname}
         """

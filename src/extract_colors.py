@@ -268,8 +268,11 @@ def extract_color_pool(
     console = Console()
     console.print(f"\n🎨 Selected palette constraints: [bold]{palette}[/bold]\n")
 
-    constraints = constraints_all["constraints"]
-    polarity = constraints_all["polarity"][palette]
+    constraints = {
+        "chroma": constraints_all["constraints"]["chroma"][palette],
+        "hue": constraints_all["constraints"]["hue"][palette],
+        "deltaL": constraints_all["constraints"]["deltaL"][palette],
+    }
 
     # --------------------------------------------------------
     # Role eligibility + scoring
