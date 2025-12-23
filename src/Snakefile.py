@@ -4,7 +4,7 @@ include: "Snakefile_theme.py"
 
 PALETTE = "mocha"
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"
-IMGS = ('abstractBoxes', 'blueMosqueCeil', 'industry', 'couple', 'bull', 'witch',)
+IMGS = ('abstractBoxes', 'blueMosqueCeil', 'industry', 'couple', 'bull', 'witch', 'camels',)
 
 # bad!!
 # boxes
