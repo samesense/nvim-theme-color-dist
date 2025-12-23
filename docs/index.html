@@ -41,21 +41,31 @@
       font-size: 1.4rem;
     }
 
-    .source-image {
-      margin-top: 1rem;
-      margin-bottom: 1.5rem;
+    /* NEW: horizontal layout */
+    .theme-content {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
     }
 
-    .source-image img {
-      max-width: 640px;
-      width: 100%;
+    .theme-media {
+      flex: 0 0 220px;
+    }
+
+    .theme-media img {
+      width: 220px;
+      max-width: 100%;
       border-radius: 10px;
       border: 1px solid var(--border);
       display: block;
     }
 
+    .theme-palettes {
+      flex: 1;
+    }
+
     .section {
-      margin-top: 1.5rem;
+      margin-top: 1.25rem;
     }
 
     .section h3 {
@@ -98,6 +108,18 @@
       color: var(--muted);
       font-size: 0.8rem;
     }
+
+    /* Mobile fallback */
+    @media (max-width: 800px) {
+      .theme-content {
+        flex-direction: column;
+      }
+
+      .theme-media img {
+        width: 100%;
+        max-width: 360px;
+      }
+    }
   </style>
 </head>
 
@@ -114,8 +136,7 @@
   <script>
     async function loadThemes() {
       const res = await fetch("themes.json");
-      const data = await res.json();
-      return data;
+      return await res.json();
     }
 
     function makeSwatch(hex, label = "") {
@@ -149,19 +170,26 @@
       title.textContent = name;
       container.appendChild(title);
 
-      /* Source image */
-      const imgWrap = document.createElement("div");
-      imgWrap.className = "source-image";
+      const content = document.createElement("div");
+      content.className = "theme-content";
+
+      /* Image column */
+      const media = document.createElement("div");
+      media.className = "theme-media";
 
       const img = document.createElement("img");
       img.src = `photos/${name}.png`;
       img.alt = `${name} source image`;
-      img.onerror = () => imgWrap.remove();
+      img.loading = "lazy";
+      img.onerror = () => media.remove();
 
-      imgWrap.appendChild(img);
-      container.appendChild(imgWrap);
+      media.appendChild(img);
+      content.appendChild(media);
 
-      /* Core UI */
+      /* Palette column */
+      const palettes = document.createElement("div");
+      palettes.className = "theme-palettes";
+
       if (theme.core && Object.keys(theme.core).length) {
         const section = document.createElement("div");
         section.className = "section";
@@ -178,10 +206,9 @@
         }
 
         section.appendChild(row);
-        container.appendChild(section);
+        palettes.appendChild(section);
       }
 
-      /* Accents */
       if (theme.accents && Object.keys(theme.accents).length) {
         const section = document.createElement("div");
         section.className = "section";
@@ -200,8 +227,11 @@
         }
 
         section.appendChild(row);
-        container.appendChild(section);
+        palettes.appendChild(section);
       }
+
+      content.appendChild(palettes);
+      container.appendChild(content);
 
       return container;
     }
