@@ -275,10 +275,6 @@ def extract_color_pool(image_path, constraints_json, palette, max_pixels, quant)
 
     pool = pd.DataFrame(rows)
 
-    # --------------------------------------------------------
-    # Display
-    # --------------------------------------------------------
-
     render_role_pool(pool)
 
 
