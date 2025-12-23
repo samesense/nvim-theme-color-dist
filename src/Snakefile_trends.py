@@ -56,3 +56,25 @@ rule plot_chroma_trend:
         python plot_chroma_by_role.py \
             {input} {output}
         """
+
+rule hue_trend_data:
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        INT / "constraints/hue.csv",
+    shell:
+        """
+        python hue_trend.py \
+            {input} {output}
+        """
+
+rule plot_hue_trend_data:
+    input:
+        csv = INT / "constraints/hue.csv",
+    output:
+        png = END / "figures/hue.png",
+    shell:
+        """
+        python plot_hue_trend.py \
+            {input} {output}
+        """

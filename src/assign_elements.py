@@ -366,7 +366,7 @@ def assign_elements(role_colors_csv, out_lua, theme_name):
                 row = assignments.get(elem)
                 if row:
                     f.write(f"  {elem} = '{_hex(row)}',\n")
-        f.write("}\n\nreturn " + theme_name + "\n")
+        f.write("}\n")
 
 
 if __name__ == "__main__":

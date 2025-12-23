@@ -12,3 +12,4 @@ rule all:
         #expand(END / "{img}_theme.lua", img=IMGS),
         END / "figures/deltaL_margins.png",
         END / "figures/chroma_by_role.png",
+        END / "figures/hue.png",
