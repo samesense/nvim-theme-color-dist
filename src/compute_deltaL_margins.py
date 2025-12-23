@@ -7,13 +7,6 @@ import pandas as pd
 # Role ordering (lower → higher)
 # ------------------------------------------------------------
 
-ROLE_ORDER = [
-    "background",
-    "surface",
-    "overlay",
-    "text",
-]
-
 ROLE_MAP = {
     "crust": "background",
     "mantle": "background",
@@ -29,7 +22,6 @@ ROLE_MAP = {
     "subtext1": "text",
 }
 
-# Structurally meaningful margins only
 ROLE_PAIRS = [
     ("background", "surface"),
     ("surface", "overlay"),
@@ -41,58 +33,48 @@ ROLE_PAIRS = [
 @click.command()
 @click.option(
     "--colors-csv",
-    "catppuccin_colors_csv",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     required=True,
-    help="Input CSV with columns: palette, element, L",
 )
 @click.option(
     "--out",
-    type=click.Path(dir_okay=False, path_type=Path),
-    default="deltaL_margins_by_palette.csv",
+    default="deltaL_margins.csv",
     show_default=True,
-    help="Output CSV of ΔL* margins by palette",
+    type=click.Path(dir_okay=False, path_type=Path),
 )
-def compute_deltaL(catppuccin_colors_csv: Path, out: Path):
+def compute_deltaL(colors_csv: Path, out: Path):
     """
-    Compute ΔL* margins between semantic role pairs,
-    split by Catppuccin palette.
+    Compute per-color ΔL* distributions between semantic role pairs.
     """
-    df = pd.read_csv(catppuccin_colors_csv)
+    df = pd.read_csv(colors_csv)
 
-    required = {"palette", "element", "L"}
-    if not required.issubset(df.columns):
-        missing = ", ".join(sorted(required - set(df.columns)))
-        raise click.ClickException(f"Missing required columns: {missing}")
+    if not {"palette", "element", "L"}.issubset(df.columns):
+        raise click.ClickException("CSV must contain palette, element, L columns")
 
-    # Map elements → roles
     df["role"] = df["element"].map(ROLE_MAP)
     df = df.dropna(subset=["role"])
 
     rows = []
 
-    for palette, sub in df.groupby("palette", sort=True):
-        # Mean L* per role (palette-local)
-        role_means = sub.groupby("role")["L"].mean().reindex(ROLE_ORDER)
-
+    for palette, sub in df.groupby("palette"):
         for low, high in ROLE_PAIRS:
-            if pd.isna(role_means[low]) or pd.isna(role_means[high]):
-                continue  # skip incomplete palettes safely
+            low_colors = sub[sub.role == low]
+            high_colors = sub[sub.role == high]
 
-            rows.append(
-                {
-                    "palette": palette,
-                    "low_role": low,
-                    "high_role": high,
-                    "pair": f"{low}→{high}",
-                    "delta_L": role_means[high] - role_means[low],
-                }
-            )
+            for _, lo in low_colors.iterrows():
+                for _, hi in high_colors.iterrows():
+                    rows.append(
+                        {
+                            "palette": palette,
+                            "pair": f"{low}→{high}",
+                            "low_element": lo.element,
+                            "high_element": hi.element,
+                            "delta_L": hi.L - lo.L,
+                        }
+                    )
 
-    out_df = pd.DataFrame(rows).sort_values(["palette", "pair"])
-    out_df.to_csv(out, index=False)
-
-    click.echo(f"✓ Wrote {out} ({len(out_df)} rows)")
+    out.write_text(pd.DataFrame(rows).to_csv(index=False))
+    click.echo(f"✓ Wrote {out} ({len(rows)} rows)")
 
 
 if __name__ == "__main__":
