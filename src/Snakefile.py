@@ -2,18 +2,8 @@ include: "Snakefile_const.py"
 include: "Snakefile_trends.py"
 include: "Snakefile_theme.py"
 
-PALETTE = "mocha"
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"
-IMGS = ('abstractBoxes', 'blueMosqueCeil', 'industry', 'couple', 'bull', 'witch', 'camels',)
-
-# bad!!
-# boxes
-# witch
-# bull
-# ma
-# forest
-# couple
-# industry
+IMGS = {'savitsky': ('abstractBoxes', 'industry', 'couple', 'bull', 'witch', 'camels',)}
 
 rule all:
     input:
@@ -21,7 +11,8 @@ rule all:
         END / "figures/deltaL_margins.png",
         END / "figures/chroma_by_role.png",
         END / "figures/hue.png",
-        expand(END / "{img}_theme.lua", img=IMGS),
+        #expand(END / "{img}_theme.lua", img=IMGS),
+        expand(END / "{theme_pack}_registry.lua", theme_pack=IMGS),
 
 onsuccess:
     shell('curl -d "colors done 🥳" ntfy.sh/perry-runs')
