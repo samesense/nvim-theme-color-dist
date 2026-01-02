@@ -6,6 +6,7 @@ CATPPUCCIN_DIST = "catppuccin/mocha.csv"
 #IMGS = {'savitsky': ('abstractBoxes', 'industry', 'couple', 'bull', 'witch', 'camels',)}
 # bads: witch / couple
 IMGS = {'savitsky': ('abstractBoxes', 'camels',)}
+IMGS = {'savitsky': ( 'camels',)}
 
 rule all:
     input:

@@ -271,16 +271,13 @@ def pick_accents(
     *,
     cool_rank_floor: float = 0.60,
     cool_min_deltal: float = 24.0,
+    accent_min_deltal: float = 18.0,
 ):
     used = {hex_from_row(v) for v in assignments.values()}
 
-    base_L = None
-    if "base" in assignments:
-        base_L = float(
-            assignments["base"].L
-            if hasattr(assignments["base"], "L")
-            else assignments["base"]["L"]
-        )
+    base = assignments.get("base")
+    base_L = float(base.L) if base is not None else None
+    is_dark = base_L is not None and base_L < 50.0  # heuristic; fine for your pipeline
 
     for role in ACCENT_ROLES:
         elems = ELEMENTS_BY_ROLE[role]
@@ -288,31 +285,52 @@ def pick_accents(
         if sub.empty:
             continue
 
-        # hue window (same as before)
+        # Hue window (if present)
         h0 = hue_center(constraints, role)
         w = hue_width(constraints, role)
         if h0 is not None and w is not None:
             sub["hue_dist"] = sub.hue.apply(lambda h: circ_dist(h, h0))
-            cand = sub[sub.hue_dist <= w / 2]
+            cand = sub[sub.hue_dist <= w / 2].copy()
             if cand.empty:
                 cand = sub
         else:
             cand = sub
 
-        if role == "accent_cool":
-            # --- NEW: enforce readability vs base ---
-            if base_L is not None:
-                # primary: enforce lightness delta
-                cand = cand[cand["L"] >= (base_L + cool_min_deltal)].copy()
+        # --- NEW: require accents to be separated from base in L* ---
+        if base_L is not None:
+            if is_dark:
+                floored = cand[cand["L"] >= (base_L + float(accent_min_deltal))].copy()
+            else:
+                floored = cand[cand["L"] <= (base_L - float(accent_min_deltal))].copy()
 
-                # if that nukes everything, relax to rank-based separation
+            if not floored.empty:
+                cand = floored  # only apply if it doesn't wipe everything out
+
+        # --- Rank-aware preference for all accents (if present) ---
+        have_ranks = (
+            "deltaE_bg_rank" in cand.columns
+            and "abs_deltaL_bg_rank" in cand.columns
+            and cand["deltaE_bg_rank"].notna().any()
+            and cand["abs_deltaL_bg_rank"].notna().any()
+        )
+
+        if role == "accent_cool":
+            # keep your stronger cool requirements
+            if base_L is not None:
+                if is_dark:
+                    cand = cand[cand["L"] >= (base_L + cool_min_deltal)]
+                else:
+                    cand = cand[cand["L"] <= (base_L - cool_min_deltal)]
+
+                # If we filtered everything out, relax but still try to avoid "darker than base" in dark themes
                 if cand.empty:
                     cand = sub.copy()
-
-            have_ranks = (
-                cand["deltaE_bg_rank"].notna().any()
-                and cand["abs_deltaL_bg_rank"].notna().any()
-            )
+                    if is_dark:
+                        cand = cand[cand["L"] >= base_L]
+                    else:
+                        cand = cand[cand["L"] <= base_L]
+                    if cand.empty:
+                        cand = sub.copy()
 
             if have_ranks:
                 strict = cand[
@@ -336,8 +354,17 @@ def pick_accents(
                 )
 
         else:
-            cand = cand.sort_values(["frequency", "score"], ascending=[False, False])
+            if have_ranks:
+                cand = cand.sort_values(
+                    ["deltaE_bg_rank", "abs_deltaL_bg_rank", "score", "frequency"],
+                    ascending=[False, False, False, False],
+                )
+            else:
+                cand = cand.sort_values(
+                    ["frequency", "score"], ascending=[False, False]
+                )
 
+        # assign unique colors per element
         for elem in elems:
             if cand.empty:
                 break
