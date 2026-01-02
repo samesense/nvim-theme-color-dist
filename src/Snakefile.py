@@ -7,12 +7,10 @@ IMGS = {'savitsky': ('abstractBoxes', 'industry', 'couple', 'bull', 'witch', 'ca
 
 rule all:
     input:
-        #expand(END / "{img}_theme.lua", img=IMGS),
         END / "figures/deltaL_margins.png",
         END / "figures/chroma_by_role.png",
         END / "figures/hue.png",
-        #expand(END / "{img}_theme.lua", img=IMGS),
-        expand(END / "{theme_pack}_registry.lua", theme_pack=IMGS),
+        expand(DOCS / 'demo/savitsky/{img}.png', img=IMGS['savitsky']),
 
 onsuccess:
     shell('curl -d "colors done 🥳" ntfy.sh/perry-runs')

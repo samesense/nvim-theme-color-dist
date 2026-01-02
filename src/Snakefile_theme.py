@@ -83,26 +83,26 @@ rule build_registry:
             --out {output.registry}
         """
 
-# rule render_screenshot:
-#     """
-#     Render Neovim UI screenshot for each theme
-#     """
-#     input:
-#         palette = END / "palettes/{img}.lua",
-#         highlights = END / "highlights/{img}.lua",
-#         registry = END / "registry.lua",
-#     output:
-#         png = RAW / "photos/ui/{img}.png",
-#     params:
-#         theme = "{img}",
-#     shell:
-#         """
-#         nvim --headless \
-#           -u scripts/screenshot_init.lua \
-#           +"lua require('yourthemes').load('{params.theme}')" \
-#           +"lua require('screenshot').capture('{output.png}')" \
-#           +q
-#         """
+rule render_screenshot:
+    """
+    Render Neovim UI screenshot for each theme
+    """
+    input:
+        palette = END / "{theme_pack}/palettes/{img}.lua",
+        registry = END / "{theme_pack}_registry.lua",
+        highlights = RAW / "lua/{theme_pack}/highlights/default.lua",
+    output:
+        png = DOCS / "demo/{theme_pack}/{img}.png",
+    params:
+        theme = "{img}",
+    shell:
+        """
+        nvim --headless \
+        -u screenshot_init.lua \
+        +"lua require('savitsky').load('{wildcards.img}')" \
+        +"lua __codeshot_capture('{output.png}')" \
+        +qa!
+        """
 #
 # rule build_docs_index:
 #     """
