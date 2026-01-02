@@ -5,15 +5,15 @@ include: "Snakefile_theme.py"
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"
 #IMGS = {'savitsky': ('abstractBoxes', 'industry', 'couple', 'bull', 'witch', 'camels',)}
 # bads: witch / couple
-IMGS = {'savitsky': ('abstractBoxes', 'camels',)}
-IMGS = {'savitsky': ( 'camels',)}
+IMGS = {'savitsky': ('abstractBoxes', 'camels', 'bull', 'industry', 'man', 'forest', 'witch', 'couple',)}
+#IMGS = {'savitsky': ( 'industry',)}
 
 rule all:
     input:
         END / "figures/deltaL_margins.png",
         END / "figures/chroma_by_role.png",
         END / "figures/hue.png",
-        expand(END / "savitsky/palettes/{img}.lua", img=IMGS['savitsky']),
+        #expand(END / "savitsky/palettes/{img}.lua", img=IMGS['savitsky']),
         #expand(DOCS / 'demo/savitsky/{img}.png', img=IMGS['savitsky']),
 
 onsuccess:

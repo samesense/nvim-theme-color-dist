@@ -41,14 +41,11 @@ ROLE_ORDER = [
     "background",
 ]
 
-UI_CORE = ["background", "surface", "overlay", "text"]
-
 PAIR_BG_TEXT = "background→text"
 PAIR_BG_SURF = "background→surface"
 PAIR_SURF_OVER = "surface→overlay"
 PAIR_OVER_TEXT = "overlay→text"
 
-# element -> role reverse map
 ROLE_BY_ELEMENT = {
     elem: role for role, elems in ELEMENTS_BY_ROLE.items() for elem in elems
 }
@@ -60,6 +57,10 @@ ROLE_BY_ELEMENT = {
 
 def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def norm_hex(h: str) -> str:
+    return str(h).strip().lower()
 
 
 def circ_dist_deg(a: float, b: float) -> float:
@@ -85,7 +86,7 @@ def lab_to_rgb_hex(L: float, a: float, b: float) -> str:
     rgb = lab2rgb(lab)[0, 0, :]
     rgb = np.clip(rgb, 0.0, 1.0)
     r, g, bb = (rgb * 255.0 + 0.5).astype(int)
-    return f"#{r:02x}{g:02x}{bb:02x}"
+    return f"#{r:02x}{g:02x}{bb:02x}".lower()
 
 
 def delta_e_lab(r1: Dict[str, float], r2: Dict[str, float]) -> float:
@@ -133,7 +134,19 @@ class PaletteConstraints:
 
 def normalize_assignment_row(d: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(d)
-    for k in ["L", "a", "b", "chroma", "hue", "frequency", "score", "R", "G", "B"]:
+    for k in [
+        "L",
+        "a",
+        "b",
+        "chroma",
+        "hue",
+        "frequency",
+        "score",
+        "R",
+        "G",
+        "B",
+        "hex",
+    ]:
         if k not in out and k.capitalize() in out:
             out[k] = out[k.capitalize()]
     for k in ["L", "a", "b", "chroma", "hue", "frequency", "score"]:
@@ -142,14 +155,16 @@ def normalize_assignment_row(d: Dict[str, Any]) -> Dict[str, Any]:
     for k in ["R", "G", "B"]:
         if k in out and out[k] is not None:
             out[k] = int(out[k])
+    if "hex" in out and out["hex"] is not None:
+        out["hex"] = norm_hex(out["hex"])
     return out
 
 
 def element_hex(row: Dict[str, Any]) -> str:
     if "hex" in row and isinstance(row["hex"], str) and row["hex"].startswith("#"):
-        return row["hex"]
+        return norm_hex(row["hex"])
     if all(k in row for k in ["R", "G", "B"]):
-        return f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}"
+        return f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}".lower()
     return lab_to_rgb_hex(float(row["L"]), float(row["a"]), float(row["b"]))
 
 
@@ -209,22 +224,95 @@ def nudge_into_role(
     return out
 
 
+# ============================================================
+# Foreground-safety vs background (NEW)
+# ============================================================
+
+
+def _base_is_dark(assignments: Dict[str, Dict[str, Any]]) -> Optional[bool]:
+    if "base" not in assignments:
+        return None
+    return float(assignments["base"]["L"]) < 50.0
+
+
+def enforce_accent_foreground_deltaL(
+    assignments: Dict[str, Dict[str, Any]],
+    *,
+    roles: Tuple[str, ...] = ("accent_cool", "accent_bridge"),
+    min_deltal_dark: float = 18.0,
+    min_deltal_light: float = 18.0,
+) -> None:
+    """
+    Prevent "dark blues relative to the background" (and similar) by forcing
+    accent roles that are commonly used as foreground to be directionally separated
+    from base in L*.
+
+    Dark theme:  accent L >= base_L + min_deltal_dark
+    Light theme: accent L <= base_L - min_deltal_light
+
+    Adjusts L only; keeps a,b constant.
+    """
+    if "base" not in assignments:
+        return
+    base_L = float(assignments["base"]["L"])
+    is_dark = base_L < 50.0
+
+    for role in roles:
+        for elem in ELEMENTS_BY_ROLE[role]:
+            if elem not in assignments:
+                continue
+            r = assignments[elem]
+            L = float(r["L"])
+            if is_dark:
+                target = base_L + float(min_deltal_dark)
+                if L < target:
+                    r["L"] = clamp(target, 0.0, 100.0)
+            else:
+                target = base_L - float(min_deltal_light)
+                if L > target:
+                    r["L"] = clamp(target, 0.0, 100.0)
+
+            r["hex"] = lab_to_rgb_hex(float(r["L"]), float(r["a"]), float(r["b"]))
+            _, C, h = lab_to_lch(float(r["L"]), float(r["a"]), float(r["b"]))
+            r["chroma"], r["hue"] = float(C), float(h)
+
+
+# ============================================================
+# Candidate selection (UPDATED)
+# ============================================================
+
+
 def pick_best_candidate(
     pool: pd.DataFrame,
     *,
     role: str,
+    elem: str,
     used_hex: set[str],
     pc: PaletteConstraints,
     relax: bool,
+    base_L: Optional[float],
+    is_dark: Optional[bool],
+    fg_roles: Tuple[str, ...],
+    fg_min_deltal: float,
 ) -> Optional[Dict[str, Any]]:
+    """
+    Choose a seed extracted color (row) to use for the given role/element.
+
+    New:
+      - honors used_hex strictly (no duplicates)
+      - for "foreground-ish" accent roles, prevents picking colors that are too close to
+        (or darker than) the background in the wrong direction.
+    """
     sub = pool[~pool["hex"].isin(used_hex)].copy()
     if sub.empty:
         return None
 
+    # prefer same role, but allow fallback
     sub_role = sub[sub["role"] == role].copy()
     if not sub_role.empty:
         sub = sub_role
 
+    # Hue window preference for accents
     hc = pc.hue_center(role)
     hw = pc.hue_width(role)
     if hc is not None and hw is not None:
@@ -234,11 +322,29 @@ def pick_best_candidate(
         if not inwin.empty:
             sub = inwin
 
-    sort_cols = []
-    if "frequency" in sub.columns:
-        sort_cols.append("frequency")
-    if "score" in sub.columns:
-        sort_cols.append("score")
+    # Foreground-safety gate for accent_cool / accent_bridge (and any roles you pass)
+    if (
+        base_L is not None
+        and is_dark is not None
+        and role in fg_roles
+        and "L" in sub.columns
+    ):
+        if is_dark:
+            strict = sub[sub["L"] >= (base_L + fg_min_deltal)].copy()
+            if strict.empty and relax:
+                # relaxed: at least not darker than base
+                strict = sub[sub["L"] >= base_L].copy()
+            if not strict.empty:
+                sub = strict
+        else:
+            strict = sub[sub["L"] <= (base_L - fg_min_deltal)].copy()
+            if strict.empty and relax:
+                strict = sub[sub["L"] <= base_L].copy()
+            if not strict.empty:
+                sub = strict
+
+    # score: high frequency + high extractor score
+    sort_cols = [c for c in ["frequency", "score"] if c in sub.columns]
     if sort_cols:
         sub = sub.sort_values(sort_cols, ascending=[False] * len(sort_cols))
 
@@ -296,49 +402,6 @@ def enforce_structural_L(
         r["hex"] = lab_to_rgb_hex(float(r["L"]), float(r["a"]), float(r["b"]))
         _, C, h = lab_to_lch(float(r["L"]), float(r["a"]), float(r["b"]))
         r["chroma"], r["hue"] = float(C), float(h)
-
-
-# ============================================================
-# Foreground/readability enforcement (NEW)
-# ============================================================
-
-
-def enforce_mauve_foreground_deltaL(
-    assignments: Dict[str, Dict[str, Any]],
-    *,
-    mauve_min_deltal: float,
-) -> None:
-    """
-    Ensure mauve is not "too dark compared to the background" when used as a foreground.
-
-    Directional rule relative to base:
-      - dark theme (base L < 50): mauve L >= base_L + mauve_min_deltal
-      - light theme (base L >= 50): mauve L <= base_L - mauve_min_deltal
-
-    Only adjusts L (keeps a,b constant), then refreshes hex/chroma/hue.
-    """
-    if "base" not in assignments or "mauve" not in assignments:
-        return
-
-    base_L = float(assignments["base"]["L"])
-    is_dark = base_L < 50.0
-
-    m = assignments["mauve"]
-    Lm = float(m["L"])
-
-    if is_dark:
-        target = base_L + float(mauve_min_deltal)
-        if Lm < target:
-            m["L"] = clamp(target, 0.0, 100.0)
-    else:
-        target = base_L - float(mauve_min_deltal)
-        if Lm > target:
-            m["L"] = clamp(target, 0.0, 100.0)
-
-    # refresh derived metrics
-    m["hex"] = lab_to_rgb_hex(float(m["L"]), float(m["a"]), float(m["b"]))
-    _, C, h = lab_to_lch(float(m["L"]), float(m["a"]), float(m["b"]))
-    m["chroma"], m["hue"] = float(C), float(h)
 
 
 # ============================================================
@@ -410,7 +473,9 @@ def polish(
     pool: pd.DataFrame,
     pc: PaletteConstraints,
     *,
-    mauve_min_deltal: float,
+    fg_min_deltal: float,
+    fg_roles: Tuple[str, ...],
+    enforce_after_fill: bool,
 ) -> Dict[str, Any]:
     assigned_raw = assignments_in.get("assigned", {})
     palette = assignments_in.get("palette")
@@ -418,8 +483,9 @@ def polish(
     assignments: Dict[str, Dict[str, Any]] = {
         k: normalize_assignment_row(v) for k, v in assigned_raw.items()
     }
-    for k, v in assignments.items():
+    for v in assignments.values():
         v["hex"] = v.get("hex") or element_hex(v)
+        v["hex"] = norm_hex(v["hex"])
         v.setdefault("derived", bool(v.get("derived", False)))
 
     pool = pool.copy()
@@ -427,13 +493,27 @@ def polish(
         raise click.ClickException("color_pool.csv must contain a 'hex' column")
     if "role" not in pool.columns:
         raise click.ClickException("color_pool.csv must contain a 'role' column")
+    pool["hex"] = pool["hex"].map(norm_hex)
+
     for c in ["L", "a", "b", "chroma", "hue", "frequency", "score"]:
         if c in pool.columns:
             pool[c] = pd.to_numeric(pool[c], errors="coerce")
 
-    all_elems = [e for r in ROLE_ORDER for e in ELEMENTS_BY_ROLE[r]]
-    used_hex = {assignments[e]["hex"] for e in assignments if "hex" in assignments[e]}
+    # Optional: dedupe pool by hex to avoid duplicate visible colors
+    sort_cols = [c for c in ["frequency", "score"] if c in pool.columns]
+    if sort_cols:
+        pool = pool.sort_values(sort_cols, ascending=[False] * len(sort_cols))
+    pool = pool.drop_duplicates(subset=["hex"], keep="first").reset_index(drop=True)
 
+    all_elems = [e for r in ROLE_ORDER for e in ELEMENTS_BY_ROLE[r]]
+    used_hex = {
+        norm_hex(assignments[e]["hex"]) for e in assignments if "hex" in assignments[e]
+    }
+
+    base_L = float(assignments["base"]["L"]) if "base" in assignments else None
+    is_dark = (base_L < 50.0) if base_L is not None else None
+
+    # two-pass strategy: strict then relaxed
     for relax in [False, True]:
         for elem in all_elems:
             if elem in assignments:
@@ -441,7 +521,16 @@ def polish(
             role = ROLE_BY_ELEMENT[elem]
 
             seed = pick_best_candidate(
-                pool, role=role, used_hex=used_hex, pc=pc, relax=relax
+                pool,
+                role=role,
+                elem=elem,
+                used_hex=used_hex,
+                pc=pc,
+                relax=relax,
+                base_L=base_L,
+                is_dark=is_dark,
+                fg_roles=fg_roles,
+                fg_min_deltal=fg_min_deltal,
             )
             if seed is None:
                 continue
@@ -488,33 +577,63 @@ def polish(
             }
             nudged = nudge_into_role(seed_row, role, pc, relax=relax)
 
-            if nudged["hex"] in used_hex and relax:
+            # Foreground-safety also applied to derived colors (important!)
+            if base_L is not None and is_dark is not None and role in fg_roles:
+                Lm = float(nudged["L"])
+                if is_dark:
+                    target = base_L + float(fg_min_deltal)
+                    if Lm < target:
+                        nudged["L"] = clamp(target, 0.0, 100.0)
+                else:
+                    target = base_L - float(fg_min_deltal)
+                    if Lm > target:
+                        nudged["L"] = clamp(target, 0.0, 100.0)
+
+                nudged["hex"] = lab_to_rgb_hex(
+                    float(nudged["L"]), float(nudged["a"]), float(nudged["b"])
+                )
+                _, C2, h2 = lab_to_lch(
+                    float(nudged["L"]), float(nudged["a"]), float(nudged["b"])
+                )
+                nudged["chroma"], nudged["hue"] = float(C2), float(h2)
+
+            # uniqueness: if collision, perturb hue slightly in relaxed pass
+            if norm_hex(nudged["hex"]) in used_hex and relax:
                 L, C, h = lab_to_lch(nudged["L"], nudged["a"], nudged["b"])
-                for dh in [8, -8, 16, -16, 24, -24]:
+                for dh in [8, -8, 16, -16, 24, -24, 32, -32]:
                     L2, a2, b2 = lch_to_lab(L, C, (h + dh) % 360.0)
                     hx = lab_to_rgb_hex(L2, a2, b2)
-                    if hx not in used_hex:
-                        nudged["L"], nudged["a"], nudged["b"] = L2, a2, b2
-                        nudged["hex"] = hx
-                        _, C2, h2 = lab_to_lch(L2, a2, b2)
+                    if norm_hex(hx) not in used_hex:
+                        nudged["L"], nudged["a"], nudged["b"] = (
+                            float(L2),
+                            float(a2),
+                            float(b2),
+                        )
+                        nudged["hex"] = norm_hex(hx)
+                        _, C2, h2 = lab_to_lch(float(L2), float(a2), float(b2))
                         nudged["chroma"], nudged["hue"] = float(C2), float(h2)
                         break
 
-            if nudged["hex"] in used_hex:
+            if norm_hex(nudged["hex"]) in used_hex:
                 continue
 
             nudged["element"] = elem
+            nudged["hex"] = norm_hex(nudged["hex"])
             assignments[elem] = nudged
-            used_hex.add(nudged["hex"])
+            used_hex.add(norm_hex(nudged["hex"]))
 
         if all(e in assignments for e in all_elems):
             break
 
-    # Best-effort structural enforcement after fill
     enforce_structural_L(assignments, pc)
 
-    # NEW: enforce mauve readability vs base (fix "too dark mauve")
-    enforce_mauve_foreground_deltaL(assignments, mauve_min_deltal=mauve_min_deltal)
+    if enforce_after_fill:
+        enforce_accent_foreground_deltaL(
+            assignments,
+            roles=fg_roles,
+            min_deltal_dark=fg_min_deltal,
+            min_deltal_light=fg_min_deltal,
+        )
 
     out = {
         "palette": palette,
@@ -559,11 +678,23 @@ def polish(
     "--no-render", is_flag=True, default=False, help="Disable rich table output."
 )
 @click.option(
-    "--mauve-min-deltal",
+    "--fg-min-deltal",
     default=24.0,
     show_default=True,
     type=float,
-    help="Minimum directional L* separation between base and mauve (foreground readability).",
+    help="Directional minimum L* separation from base for foreground-ish accents (prevents dark blues on dark base).",
+)
+@click.option(
+    "--fg-roles",
+    default="accent_cool,accent_bridge",
+    show_default=True,
+    help="Comma-separated roles to treat as foreground-ish and enforce fg-min-deltal against base.",
+)
+@click.option(
+    "--enforce-after-fill/--no-enforce-after-fill",
+    default=True,
+    show_default=True,
+    help="Apply fg readability enforcement after gap filling (in addition to during selection).",
 )
 def main(
     assignments_json: Path,
@@ -573,7 +704,9 @@ def main(
     out_lua: Optional[Path],
     theme_name: str,
     no_render: bool,
-    mauve_min_deltal: float,
+    fg_min_deltal: float,
+    fg_roles: str,
+    enforce_after_fill: bool,
 ):
     assignments_in = json.loads(assignments_json.read_text())
     pool = pd.read_csv(color_pool_csv)
@@ -597,7 +730,15 @@ def main(
     if "palette" in pool.columns:
         pool = pool[pool["palette"] == palette].copy()
 
-    out = polish(assignments_in, pool, pc, mauve_min_deltal=mauve_min_deltal)
+    roles_tuple = tuple(r.strip() for r in fg_roles.split(",") if r.strip())
+    out = polish(
+        assignments_in,
+        pool,
+        pc,
+        fg_min_deltal=fg_min_deltal,
+        fg_roles=roles_tuple,
+        enforce_after_fill=enforce_after_fill,
+    )
     out_json.write_text(json.dumps(out, indent=2))
 
     if not no_render:

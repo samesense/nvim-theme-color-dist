@@ -18,7 +18,11 @@ from rich.text import Text
 ELEMENTS_BY_ROLE = {
     "background": ["base", "mantle", "crust"],
     "surface": ["surface2", "surface1", "surface0"],
-    "overlay": ["overlay2", "overlay1", "overlay0"],
+    "overlay": (
+        ["overlay2", "overlay1", "overlay1", "overlay0"]
+        if False
+        else ["overlay2", "overlay1", "overlay0"]
+    ),
     "text": ["text", "subtext1", "subtext0"],
     "accent_red": ["rosewater", "flamingo", "pink", "red", "maroon"],
     "accent_warm": ["peach", "yellow", "green"],
@@ -51,12 +55,33 @@ ACCENT_ROLES = [
 
 
 def hex_from_row(r) -> str:
-    return f"#{int(r.R):02x}{int(r.G):02x}{int(r.B):02x}"
+    # Always lower-case for stable uniqueness checks
+    return f"#{int(r.R):02x}{int(r.G):02x}{int(r.B):02x}".lower()
+
+
+def norm_hex(h: str) -> str:
+    return str(h).strip().lower()
 
 
 def circ_dist(a, b) -> float:
     d = abs(a - b) % 360
     return min(d, 360 - d)
+
+
+def pool_add_hex_and_dedupe(pool: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize and dedupe the pool by hex so we don't accidentally select
+    the same visible color multiple times via duplicate rows.
+    """
+    pool = pool.copy()
+    pool["hex"] = pool.apply(hex_from_row, axis=1).map(norm_hex)
+
+    # keep "best" row per hex (prefer higher frequency, then higher score)
+    sort_cols = [c for c in ["frequency", "score"] if c in pool.columns]
+    if sort_cols:
+        pool = pool.sort_values(sort_cols, ascending=[False] * len(sort_cols))
+    pool = pool.drop_duplicates(subset=["hex"], keep="first").reset_index(drop=True)
+    return pool
 
 
 def ensure_rank_columns(pool: pd.DataFrame) -> pd.DataFrame:
@@ -159,10 +184,10 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
                         )
                         - 2.0
                         * (
-                            bg.frequency
-                            + surf.frequency
-                            + over.frequency
-                            + text.frequency
+                            float(getattr(bg, "frequency", 0.0))
+                            + float(getattr(surf, "frequency", 0.0))
+                            + float(getattr(over, "frequency", 0.0))
+                            + float(getattr(text, "frequency", 0.0))
                         )
                     )
 
@@ -184,7 +209,7 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
 
 
 def fill_ui(pool, assignments):
-    used = {hex_from_row(v) for v in assignments.values()}
+    used = {norm_hex(hex_from_row(v)) for v in assignments.values()}
 
     def pick(role, target_L):
         sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
@@ -192,7 +217,7 @@ def fill_ui(pool, assignments):
             return None
         sub["dist"] = (sub.L - target_L).abs()
         r = sub.sort_values(["dist", "score"], ascending=[True, False]).iloc[0]
-        used.add(r.hex)
+        used.add(norm_hex(r.hex))
         return r
 
     if "base" not in assignments or "surface1" not in assignments:
@@ -224,46 +249,6 @@ def fill_ui(pool, assignments):
 # ============================================================
 
 
-def _apply_hue_window(sub: pd.DataFrame, constraints: dict, role: str) -> pd.DataFrame:
-    h0 = hue_center(constraints, role)
-    w = hue_width(constraints, role)
-    if h0 is None or w is None or sub.empty:
-        return sub
-
-    tmp = sub.copy()
-    tmp["hue_dist"] = tmp.hue.apply(lambda h: circ_dist(h, h0))
-    cand = tmp[tmp.hue_dist <= w / 2]
-    return cand if not cand.empty else tmp
-
-
-def _prefer_fg_safe_cool(
-    cand: pd.DataFrame,
-    *,
-    base_L: float,
-    min_dl: float,
-    relax_to_positive: bool = True,
-) -> pd.DataFrame:
-    """
-    Prefer cool accents that can be used as foreground on base:
-      - hard gate: L >= base_L + min_dl
-      - relax: L > base_L (if relax_to_positive)
-      - never intentionally prefer "darker than base" for cool FG.
-    """
-    if cand.empty or "L" not in cand.columns:
-        return cand
-
-    strict = cand[cand["L"] >= (base_L + min_dl)]
-    if not strict.empty:
-        return strict
-
-    if relax_to_positive:
-        pos = cand[cand["L"] > base_L]
-        if not pos.empty:
-            return pos
-
-    return cand
-
-
 def pick_accents(
     pool: pd.DataFrame,
     assignments: dict,
@@ -273,11 +258,11 @@ def pick_accents(
     cool_min_deltal: float = 24.0,
     accent_min_deltal: float = 18.0,
 ):
-    used = {hex_from_row(v) for v in assignments.values()}
+    used = {norm_hex(hex_from_row(v)) for v in assignments.values()}
 
     base = assignments.get("base")
     base_L = float(base.L) if base is not None else None
-    is_dark = base_L is not None and base_L < 50.0  # heuristic; fine for your pipeline
+    is_dark = base_L is not None and base_L < 50.0  # heuristic
 
     for role in ACCENT_ROLES:
         elems = ELEMENTS_BY_ROLE[role]
@@ -296,17 +281,16 @@ def pick_accents(
         else:
             cand = sub
 
-        # --- NEW: require accents to be separated from base in L* ---
-        if base_L is not None:
+        # Require accents to be separated from base in L* (only if it doesn't wipe everything)
+        if base_L is not None and "L" in cand.columns:
             if is_dark:
                 floored = cand[cand["L"] >= (base_L + float(accent_min_deltal))].copy()
             else:
                 floored = cand[cand["L"] <= (base_L - float(accent_min_deltal))].copy()
-
             if not floored.empty:
-                cand = floored  # only apply if it doesn't wipe everything out
+                cand = floored
 
-        # --- Rank-aware preference for all accents (if present) ---
+        # Rank-aware preference (if present)
         have_ranks = (
             "deltaE_bg_rank" in cand.columns
             and "abs_deltaL_bg_rank" in cand.columns
@@ -315,14 +299,14 @@ def pick_accents(
         )
 
         if role == "accent_cool":
-            # keep your stronger cool requirements
-            if base_L is not None:
+            # stronger cool FG-safety
+            if base_L is not None and "L" in cand.columns:
                 if is_dark:
-                    cand = cand[cand["L"] >= (base_L + cool_min_deltal)]
+                    cand = cand[cand["L"] >= (base_L + float(cool_min_deltal))]
                 else:
-                    cand = cand[cand["L"] <= (base_L - cool_min_deltal)]
+                    cand = cand[cand["L"] <= (base_L - float(cool_min_deltal))]
 
-                # If we filtered everything out, relax but still try to avoid "darker than base" in dark themes
+                # Relax if empty but still prefer "not darker than base" in dark themes
                 if cand.empty:
                     cand = sub.copy()
                     if is_dark:
@@ -352,7 +336,6 @@ def pick_accents(
                 cand = cand.sort_values(
                     ["frequency", "score"], ascending=[False, False]
                 )
-
         else:
             if have_ranks:
                 cand = cand.sort_values(
@@ -364,14 +347,22 @@ def pick_accents(
                     ["frequency", "score"], ascending=[False, False]
                 )
 
-        # assign unique colors per element
+        # Assign unique colors per element
         for elem in elems:
             if cand.empty:
                 break
+
             row = cand.iloc[0]
+            hx = norm_hex(row.hex)
+
+            # Extra guard: if we somehow collided, skip forward
+            if hx in used:
+                cand = cand[cand.hex != hx]
+                continue
+
             assignments[elem] = row
-            used.add(row.hex)
-            cand = cand[cand.hex != row.hex]
+            used.add(hx)
+            cand = cand[cand.hex != hx]
 
     return assignments
 
@@ -419,9 +410,9 @@ def render(assignments, name):
                 elem,
                 h,
                 Text("   ", style=Style(bgcolor=h)),
-                f"{r.L:.1f}",
-                f"{r.chroma:.1f}",
-                f"{r.hue:.0f}°",
+                f"{float(r.L):.1f}",
+                f"{float(r.chroma):.1f}",
+                f"{float(r.hue):.0f}°",
                 fmt_rank(dE_rank),
                 fmt_rank(dL_rank),
             )
@@ -431,9 +422,15 @@ def render(assignments, name):
 
 def row_to_dict(r):
     if hasattr(r, "_asdict"):  # namedtuple
-        return dict(r._asdict())
+        d = dict(r._asdict())
+        if "hex" in d and d["hex"]:
+            d["hex"] = norm_hex(d["hex"])
+        return d
     if isinstance(r, pd.Series):  # pandas row
-        return r.to_dict()
+        d = r.to_dict()
+        if "hex" in d and d["hex"]:
+            d["hex"] = norm_hex(d["hex"])
+        return d
     raise TypeError(f"Unsupported row type: {type(r)}")
 
 
@@ -454,7 +451,14 @@ def row_to_dict(r):
     default=24.0,
     show_default=True,
     type=float,
-    help="Minimum (cool.L - base.L) for accent_cool foreground safety (relaxed to L>base if needed).",
+    help="Minimum (cool.L - base.L) for accent_cool foreground safety (relaxed if needed).",
+)
+@click.option(
+    "--accent-min-deltal",
+    default=18.0,
+    show_default=True,
+    type=float,
+    help="Minimum L* separation from base for non-cool accents when base is dark (or inverse if base is light).",
 )
 def main(
     color_pool_csv,
@@ -463,15 +467,18 @@ def main(
     out_json,
     cool_rank_floor,
     cool_min_deltal,
+    accent_min_deltal,
 ):
     pool = pd.read_csv(color_pool_csv)
-    pool["hex"] = pool.apply(hex_from_row, axis=1)
+    pool = pool_add_hex_and_dedupe(pool)
 
     # Ensure new rank columns exist (computed if missing)
     pool = ensure_rank_columns(pool)
 
     constraints_all = json.loads(Path(constraints_json).read_text())
-    palette = pool.palette.iloc[0]
+    if "palette" not in pool.columns:
+        raise click.ClickException("color_pool.csv must include a 'palette' column")
+    palette = str(pool.palette.iloc[0])
 
     constraints = {
         "deltaL": constraints_all["constraints"]["deltaL"][palette],
@@ -487,9 +494,9 @@ def main(
         constraints,
         cool_rank_floor=cool_rank_floor,
         cool_min_deltal=cool_min_deltal,
+        accent_min_deltal=accent_min_deltal,
     )
 
-    # Record missing elements
     missing = [
         elem
         for role in ROLE_ORDER
