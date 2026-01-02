@@ -22,7 +22,8 @@ ELEMENTS_BY_ROLE = {
     "text": ["text", "subtext1", "subtext0"],
     "accent_red": ["rosewater", "flamingo", "pink", "red", "maroon"],
     "accent_warm": ["peach", "yellow", "green"],
-    "accent_cool": ["teal", "sky", "sapphire", "blue", "lavender"],
+    # Put the "often-used-as-FG" cools first so Include/imports tend to be readable.
+    "accent_cool": ["blue", "sapphire", "sky", "lavender", "teal"],
     "accent_bridge": ["mauve"],
 }
 
@@ -56,6 +57,39 @@ def hex_from_row(r) -> str:
 def circ_dist(a, b) -> float:
     d = abs(a - b) % 360
     return min(d, 360 - d)
+
+
+def ensure_rank_columns(pool: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ensure the pool has the new ranks added by extract_color_pool:
+      - deltaE_bg_rank
+      - abs_deltaL_bg_rank
+
+    Also normalize a couple legacy column names if present.
+    """
+    pool = pool.copy()
+
+    # Some earlier versions used slightly different names; normalize if present
+    if "abs_deltaL_bg" not in pool.columns and "abs_deltaL" in pool.columns:
+        pool["abs_deltaL_bg"] = pool["abs_deltaL"]
+
+    if "deltaE_bg_rank" not in pool.columns:
+        if "deltaE_bg" in pool.columns:
+            pool["deltaE_bg_rank"] = pool.groupby("role")["deltaE_bg"].rank(
+                pct=True, method="average"
+            )
+        else:
+            pool["deltaE_bg_rank"] = np.nan
+
+    if "abs_deltaL_bg_rank" not in pool.columns:
+        if "abs_deltaL_bg" in pool.columns:
+            pool["abs_deltaL_bg_rank"] = pool.groupby("role")["abs_deltaL_bg"].rank(
+                pct=True, method="average"
+            )
+        else:
+            pool["abs_deltaL_bg_rank"] = np.nan
+
+    return pool
 
 
 # ============================================================
@@ -190,42 +224,134 @@ def fill_ui(pool, assignments):
 # ============================================================
 
 
-def pick_accents(pool, assignments, constraints):
+def _apply_hue_window(sub: pd.DataFrame, constraints: dict, role: str) -> pd.DataFrame:
+    h0 = hue_center(constraints, role)
+    w = hue_width(constraints, role)
+    if h0 is None or w is None or sub.empty:
+        return sub
+
+    tmp = sub.copy()
+    tmp["hue_dist"] = tmp.hue.apply(lambda h: circ_dist(h, h0))
+    cand = tmp[tmp.hue_dist <= w / 2]
+    return cand if not cand.empty else tmp
+
+
+def _prefer_fg_safe_cool(
+    cand: pd.DataFrame,
+    *,
+    base_L: float,
+    min_dl: float,
+    relax_to_positive: bool = True,
+) -> pd.DataFrame:
+    """
+    Prefer cool accents that can be used as foreground on base:
+      - hard gate: L >= base_L + min_dl
+      - relax: L > base_L (if relax_to_positive)
+      - never intentionally prefer "darker than base" for cool FG.
+    """
+    if cand.empty or "L" not in cand.columns:
+        return cand
+
+    strict = cand[cand["L"] >= (base_L + min_dl)]
+    if not strict.empty:
+        return strict
+
+    if relax_to_positive:
+        pos = cand[cand["L"] > base_L]
+        if not pos.empty:
+            return pos
+
+    return cand
+
+
+def pick_accents(
+    pool: pd.DataFrame,
+    assignments: dict,
+    constraints: dict,
+    *,
+    cool_rank_floor: float = 0.60,
+    cool_min_deltal: float = 24.0,
+):
     used = {hex_from_row(v) for v in assignments.values()}
+
+    base_L = None
+    if "base" in assignments:
+        base_L = float(
+            assignments["base"].L
+            if hasattr(assignments["base"], "L")
+            else assignments["base"]["L"]
+        )
 
     for role in ACCENT_ROLES:
         elems = ELEMENTS_BY_ROLE[role]
         sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
-
         if sub.empty:
-            continue  # optional role
+            continue
 
+        # hue window (same as before)
         h0 = hue_center(constraints, role)
         w = hue_width(constraints, role)
-
-        # compute hue distance
-        sub["hue_dist"] = sub.hue.apply(lambda h: circ_dist(h, h0))
-
-        # strict window first
-        cand = sub[sub.hue_dist <= w / 2]
-
-        # relax if empty
-        if cand.empty:
+        if h0 is not None and w is not None:
+            sub["hue_dist"] = sub.hue.apply(lambda h: circ_dist(h, h0))
+            cand = sub[sub.hue_dist <= w / 2]
+            if cand.empty:
+                cand = sub
+        else:
             cand = sub
 
-        cand = cand.sort_values(["frequency", "score"], ascending=[False, False])
+        if role == "accent_cool":
+            # --- NEW: enforce readability vs base ---
+            if base_L is not None:
+                # primary: enforce lightness delta
+                cand = cand[cand["L"] >= (base_L + cool_min_deltal)].copy()
+
+                # if that nukes everything, relax to rank-based separation
+                if cand.empty:
+                    cand = sub.copy()
+
+            have_ranks = (
+                cand["deltaE_bg_rank"].notna().any()
+                and cand["abs_deltaL_bg_rank"].notna().any()
+            )
+
+            if have_ranks:
+                strict = cand[
+                    (cand["deltaE_bg_rank"] >= cool_rank_floor)
+                    & (cand["abs_deltaL_bg_rank"] >= cool_rank_floor)
+                ]
+                if strict.empty:
+                    strict = cand[cand["deltaE_bg_rank"] >= cool_rank_floor]
+                if strict.empty:
+                    strict = cand[cand["abs_deltaL_bg_rank"] >= cool_rank_floor]
+                if strict.empty:
+                    strict = cand
+
+                cand = strict.sort_values(
+                    ["deltaE_bg_rank", "abs_deltaL_bg_rank", "score", "frequency"],
+                    ascending=[False, False, False, False],
+                )
+            else:
+                cand = cand.sort_values(
+                    ["frequency", "score"], ascending=[False, False]
+                )
+
+        else:
+            cand = cand.sort_values(["frequency", "score"], ascending=[False, False])
 
         for elem in elems:
             if cand.empty:
                 break
-
             row = cand.iloc[0]
             assignments[elem] = row
             used.add(row.hex)
-
             cand = cand[cand.hex != row.hex]
 
     return assignments
+
+
+# ============================================================
+# Rendering + output
+# ============================================================
 
 
 def render(assignments, name):
@@ -238,15 +364,30 @@ def render(assignments, name):
     table.add_column("L*")
     table.add_column("C*")
     table.add_column("Hue")
+    table.add_column("dE_rank", justify="right")
+    table.add_column("|dL|_rank", justify="right")
 
     for role in ROLE_ORDER:
         for elem in ELEMENTS_BY_ROLE[role]:
             r = assignments.get(elem)
             if r is None:
-                table.add_row(elem, "[dim]—[/dim]", "", "", "", "")
+                table.add_row(elem, "[dim]—[/dim]", "", "", "", "", "", "")
                 continue
 
             h = hex_from_row(r)
+            dE_rank = getattr(r, "deltaE_bg_rank", None)
+            dL_rank = getattr(r, "abs_deltaL_bg_rank", None)
+
+            def fmt_rank(x):
+                if x is None:
+                    return ""
+                try:
+                    if np.isnan(x):
+                        return ""
+                except Exception:
+                    pass
+                return f"{float(x):.2f}"
+
             table.add_row(
                 elem,
                 h,
@@ -254,6 +395,8 @@ def render(assignments, name):
                 f"{r.L:.1f}",
                 f"{r.chroma:.1f}",
                 f"{r.hue:.0f}°",
+                fmt_rank(dE_rank),
+                fmt_rank(dL_rank),
             )
 
     console.print(table)
@@ -272,9 +415,33 @@ def row_to_dict(r):
 @click.option("--constraints-json", required=True, type=click.Path(exists=True))
 @click.option("--theme-name", default="painting")
 @click.option("--out-json", default="assignments.json", show_default=True)
-def main(color_pool_csv, constraints_json, theme_name, out_json):
+@click.option(
+    "--cool-rank-floor",
+    default=0.60,
+    show_default=True,
+    type=float,
+    help="Minimum deltaE_bg_rank percentile for accent_cool (relaxed if it prunes everything).",
+)
+@click.option(
+    "--cool-min-deltal",
+    default=24.0,
+    show_default=True,
+    type=float,
+    help="Minimum (cool.L - base.L) for accent_cool foreground safety (relaxed to L>base if needed).",
+)
+def main(
+    color_pool_csv,
+    constraints_json,
+    theme_name,
+    out_json,
+    cool_rank_floor,
+    cool_min_deltal,
+):
     pool = pd.read_csv(color_pool_csv)
     pool["hex"] = pool.apply(hex_from_row, axis=1)
+
+    # Ensure new rank columns exist (computed if missing)
+    pool = ensure_rank_columns(pool)
 
     constraints_all = json.loads(Path(constraints_json).read_text())
     palette = pool.palette.iloc[0]
@@ -287,7 +454,13 @@ def main(color_pool_csv, constraints_json, theme_name, out_json):
 
     assignments = pick_structural(pool, constraints)
     assignments = fill_ui(pool, assignments)
-    assignments = pick_accents(pool, assignments, constraints)
+    assignments = pick_accents(
+        pool,
+        assignments,
+        constraints,
+        cool_rank_floor=cool_rank_floor,
+        cool_min_deltal=cool_min_deltal,
+    )
 
     # Record missing elements
     missing = [

@@ -1,3 +1,4 @@
+            # --cool-min-deltae 30 --cool-min-abs-deltal 18 --cool-soft-min-deltal 26
 rule extract_roles:
     '''get color clusters from png'''
     input:
@@ -9,7 +10,9 @@ rule extract_roles:
         """
         python extract_colors.py {input.png} \
             --constraints-json {input.cons} \
-            --out-csv {output.colors}
+            --out-csv {output.colors} \
+            --palette mocha \
+            --cool-min-deltae 24
         """
 
 rule assign_elements:

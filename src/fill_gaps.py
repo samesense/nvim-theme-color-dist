@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import click
 import numpy as np
@@ -42,17 +42,16 @@ ROLE_ORDER = [
 ]
 
 UI_CORE = ["background", "surface", "overlay", "text"]
+ACCENT_ROLES = ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]
 
 PAIR_BG_TEXT = "background→text"
 PAIR_BG_SURF = "background→surface"
 PAIR_SURF_OVER = "surface→overlay"
 PAIR_OVER_TEXT = "overlay→text"
 
-# element -> role reverse map
 ROLE_BY_ELEMENT = {
     elem: role for role, elems in ELEMENTS_BY_ROLE.items() for elem in elems
 }
-
 
 # ============================================================
 # Color helpers (Lab / LCh)
@@ -82,17 +81,16 @@ def lch_to_lab(L: float, C: float, h: float) -> Tuple[float, float, float]:
 
 
 def lab_to_rgb_hex(L: float, a: float, b: float) -> str:
-    # lab2rgb expects shape (...,3) with L* in [0,100]
     lab = np.array([[[L, a, b]]], dtype=float)
-    rgb = lab2rgb(lab)[0, 0, :]  # floats 0..1 (may slightly exceed)
+    rgb = lab2rgb(lab)[0, 0, :]
     rgb = np.clip(rgb, 0.0, 1.0)
     r, g, bb = (rgb * 255.0 + 0.5).astype(int)
     return f"#{r:02x}{g:02x}{bb:02x}"
 
 
-def delta_e_lab(r1: Dict[str, float], r2: Dict[str, float]) -> float:
-    v1 = np.array([r1["L"], r1["a"], r1["b"]], dtype=float)
-    v2 = np.array([r2["L"], r2["a"], r2["b"]], dtype=float)
+def delta_e_lab_rows(r1: Dict[str, Any], r2: Dict[str, Any]) -> float:
+    v1 = np.array([float(r1["L"]), float(r1["a"]), float(r1["b"])], dtype=float)
+    v2 = np.array([float(r2["L"]), float(r2["a"]), float(r2["b"])], dtype=float)
     return float(np.linalg.norm(v1 - v2))
 
 
@@ -134,19 +132,26 @@ class PaletteConstraints:
 
 
 def normalize_assignment_row(d: Dict[str, Any]) -> Dict[str, Any]:
-    # assignments.json stores _asdict() from itertuples; ensure key names exist
     out = dict(d)
-    # unify: allow L/a/b named or L_/a_/b_
+
     for k in ["L", "a", "b", "chroma", "hue", "frequency", "score", "R", "G", "B"]:
         if k not in out and k.capitalize() in out:
             out[k] = out[k.capitalize()]
-    # ensure floats
+
     for k in ["L", "a", "b", "chroma", "hue", "frequency", "score"]:
         if k in out and out[k] is not None:
-            out[k] = float(out[k])
+            try:
+                out[k] = float(out[k])
+            except Exception:
+                pass
+
     for k in ["R", "G", "B"]:
         if k in out and out[k] is not None:
-            out[k] = int(out[k])
+            try:
+                out[k] = int(out[k])
+            except Exception:
+                pass
+
     return out
 
 
@@ -155,12 +160,56 @@ def element_hex(row: Dict[str, Any]) -> str:
         return row["hex"]
     if all(k in row for k in ["R", "G", "B"]):
         return f"#{int(row['R']):02x}{int(row['G']):02x}{int(row['B']):02x}"
-    # fall back: compute from Lab
     return lab_to_rgb_hex(float(row["L"]), float(row["a"]), float(row["b"]))
 
 
 # ============================================================
-# Nudge logic
+# Pool normalization / derived metrics
+# ============================================================
+
+
+def ensure_pool_columns(pool: pd.DataFrame) -> pd.DataFrame:
+    pool = pool.copy()
+
+    if "hex" not in pool.columns:
+        raise click.ClickException("color_pool.csv must contain a 'hex' column")
+    if "role" not in pool.columns:
+        raise click.ClickException("color_pool.csv must contain a 'role' column")
+
+    for c in [
+        "L",
+        "a",
+        "b",
+        "chroma",
+        "hue",
+        "frequency",
+        "score",
+        "deltaE_bg",
+        "abs_deltaL_bg",
+        "deltaE_bg_rank",
+        "abs_deltaL_bg_rank",
+    ]:
+        if c in pool.columns:
+            pool[c] = pd.to_numeric(pool[c], errors="coerce")
+
+    # Compute abs_deltaL_bg if missing but we have background candidates later; if not possible, we leave NaN.
+    if "abs_deltaL_bg" not in pool.columns:
+        pool["abs_deltaL_bg"] = np.nan
+
+    if "deltaE_bg_rank" not in pool.columns and "deltaE_bg" in pool.columns:
+        pool["deltaE_bg_rank"] = pool.groupby("role")["deltaE_bg"].rank(
+            pct=True, method="average"
+        )
+    if "abs_deltaL_bg_rank" not in pool.columns and "abs_deltaL_bg" in pool.columns:
+        pool["abs_deltaL_bg_rank"] = pool.groupby("role")["abs_deltaL_bg"].rank(
+            pct=True, method="average"
+        )
+
+    return pool
+
+
+# ============================================================
+# Nudge logic (H/C only; avoid darkening accents)
 # ============================================================
 
 
@@ -170,20 +219,28 @@ def nudge_into_role(
     pc: PaletteConstraints,
     *,
     relax: bool,
+    base_L: Optional[float] = None,
+    cool_min_deltal: float = 24.0,
+    lock_L: bool = False,
+    min_L: Optional[float] = None,
+    forbid_L_decrease: bool = False,
 ) -> Dict[str, Any]:
     """
-    Return a *new* row dict with Lab/hex nudged toward palette constraints for role.
-    Operates in LCh for hue/chroma changes.
+    Return a *new* row dict nudged toward palette constraints for role.
+    By default, ONLY adjusts hue/chroma; L is locked unless explicitly allowed.
+
+    For accent_cool safety:
+      - enforce L >= base_L + cool_min_deltal (via min_L) when base_L available
+      - never decrease L when forbid_L_decrease=True
     """
     L0, a0, b0 = float(row["L"]), float(row["a"]), float(row["b"])
     L, C, h = lab_to_lch(L0, a0, b0)
 
-    # --- chroma target band ---
+    # --- chroma band ---
     if role in pc.chroma:
         q25 = pc.chroma_q25(role)
         q75 = pc.chroma_q75(role)
         if relax:
-            # widen band if we're desperate
             q25 = max(0.0, q25 - 8.0)
             q75 = q75 + 8.0
 
@@ -192,31 +249,52 @@ def nudge_into_role(
         elif C > q75:
             C = q75
 
-    # --- hue window for accents only ---
+    # --- hue window for accents ---
     hc = pc.hue_center(role)
     hw = pc.hue_width(role)
     if hc is not None and hw is not None:
         half = (hw / 2.0) * (1.3 if relax else 1.0)
         if circ_dist_deg(h, hc) > half:
-            # move hue to nearest edge of window (or center if relax)
             if relax:
                 h = hc
             else:
-                # snap to boundary in shortest direction
-                # choose direction sign
-                d = ((h - hc + 180) % 360) - 180  # signed in [-180,180)
+                d = ((h - hc + 180) % 360) - 180  # signed [-180, 180)
                 h = (hc + math.copysign(half, d)) % 360.0
 
-    # keep L within sane bounds; do not constrain L to role here (handled by structural step)
-    L = clamp(L, 0.0, 100.0)
+    # --- L handling ---
+    L_new = L
+    if not lock_L:
+        if min_L is not None:
+            L_new = max(L_new, float(min_L))
+        if forbid_L_decrease:
+            L_new = max(L_new, L0)
 
-    L2, a2, b2 = lch_to_lab(L, C, h)
+    # clamp
+    L_new = clamp(L_new, 0.0, 100.0)
+
+    L2, a2, b2 = lch_to_lab(L_new, C, h)
+
     out = dict(row)
     out["L"], out["a"], out["b"] = float(L2), float(a2), float(b2)
-    out["chroma"], out["hue"] = lab_to_lch(out["L"], out["a"], out["b"])[1:]
+    _, C2, h2 = lab_to_lch(out["L"], out["a"], out["b"])
+    out["chroma"], out["hue"] = float(C2), float(h2)
     out["hex"] = lab_to_rgb_hex(out["L"], out["a"], out["b"])
-    out["derived"] = True
     return out
+
+
+def _role_hue_filter(
+    sub: pd.DataFrame, role: str, pc: PaletteConstraints, relax: bool
+) -> pd.DataFrame:
+    hc = pc.hue_center(role)
+    hw = pc.hue_width(role)
+    if hc is None or hw is None:
+        return sub
+
+    half = (hw / 2.0) * (1.3 if relax else 1.0)
+    tmp = sub.copy()
+    tmp["hue_dist"] = tmp["hue"].apply(lambda x: circ_dist_deg(float(x), float(hc)))
+    inwin = tmp[tmp["hue_dist"] <= half].copy()
+    return inwin if not inwin.empty else sub
 
 
 def pick_best_candidate(
@@ -226,41 +304,80 @@ def pick_best_candidate(
     used_hex: set[str],
     pc: PaletteConstraints,
     relax: bool,
+    base_L: Optional[float],
+    cool_min_deltal: float,
+    cool_rank_floor: float,
 ) -> Optional[Dict[str, Any]]:
     """
-    Choose a seed extracted color (row) to use for the given role.
-    If role-specific pool is empty, fall back to entire pool.
+    Choose a seed extracted color (row) to use for role.
+    For accent_cool: require strong separation from base using rank/ΔL floor.
     """
     sub = pool[~pool["hex"].isin(used_hex)].copy()
     if sub.empty:
         return None
 
-    # prefer same role, but allow fallback
+    # prefer same role
     sub_role = sub[sub["role"] == role].copy()
     if not sub_role.empty:
         sub = sub_role
 
-    # optional hue window preference for accents
-    hc = pc.hue_center(role)
-    hw = pc.hue_width(role)
-    if hc is not None and hw is not None:
-        half = (hw / 2.0) * (1.3 if relax else 1.0)
-        sub["hue_dist"] = sub["hue"].apply(lambda x: circ_dist_deg(float(x), float(hc)))
-        inwin = sub[sub["hue_dist"] <= half].copy()
-        if not inwin.empty:
-            sub = inwin
+    # hue filter for accents
+    sub = _role_hue_filter(sub, role, pc, relax=relax)
 
-    # score: high frequency + high extractor score
+    # accent_cool safety gates + sort by ranks
+    if role == "accent_cool":
+        if base_L is not None and "L" in sub.columns:
+            sub = sub[sub["L"].notna()]
+            sub = sub[sub["L"] >= (float(base_L) + float(cool_min_deltal))]
+
+        # If rank columns exist, enforce floors (non-fatal: relax pass will widen)
+        if "deltaE_bg_rank" in sub.columns and sub["deltaE_bg_rank"].notna().any():
+            if not relax:
+                sub2 = sub[sub["deltaE_bg_rank"] >= float(cool_rank_floor)]
+                if not sub2.empty:
+                    sub = sub2
+        if (
+            "abs_deltaL_bg_rank" in sub.columns
+            and sub["abs_deltaL_bg_rank"].notna().any()
+        ):
+            if not relax:
+                sub2 = sub[sub["abs_deltaL_bg_rank"] >= float(cool_rank_floor)]
+                if not sub2.empty:
+                    sub = sub2
+
+        # Sort preference: ranks (if present) then score/frequency
+        sort_cols = []
+        asc = []
+        for c in ["deltaE_bg_rank", "abs_deltaL_bg_rank"]:
+            if c in sub.columns and sub[c].notna().any():
+                sort_cols.append(c)
+                asc.append(False)
+        for c in ["score", "frequency"]:
+            if c in sub.columns and sub[c].notna().any():
+                sort_cols.append(c)
+                asc.append(False)
+
+        if sort_cols:
+            sub = sub.sort_values(sort_cols, ascending=asc)
+        else:
+            # fallback
+            sub = sub.sort_values(["frequency", "score"], ascending=[False, False])
+
+        return sub.iloc[0].to_dict() if not sub.empty else None
+
+    # default roles: frequency + score
     sort_cols = []
-    if "frequency" in sub.columns:
+    asc = []
+    if "frequency" in sub.columns and sub["frequency"].notna().any():
         sort_cols.append("frequency")
-    if "score" in sub.columns:
+        asc.append(False)
+    if "score" in sub.columns and sub["score"].notna().any():
         sort_cols.append("score")
-
+        asc.append(False)
     if sort_cols:
-        sub = sub.sort_values(sort_cols, ascending=[False] * len(sort_cols))
+        sub = sub.sort_values(sort_cols, ascending=asc)
 
-    return sub.iloc[0].to_dict()
+    return sub.iloc[0].to_dict() if not sub.empty else None
 
 
 # ============================================================
@@ -271,10 +388,6 @@ def pick_best_candidate(
 def enforce_structural_L(
     assign: Dict[str, Dict[str, Any]], pc: PaletteConstraints
 ) -> None:
-    """
-    Best-effort nudge of L* for base/surface1/overlay1/text to satisfy ordering + ΔL mins.
-    Does not change hue/chroma except through Lab recompose at same a,b.
-    """
     needed = ["base", "surface1", "overlay1", "text"]
     if not all(k in assign for k in needed):
         return
@@ -284,7 +397,6 @@ def enforce_structural_L(
     over = assign["overlay1"]
     text = assign["text"]
 
-    # start from current L values
     Lb, Ls, Lo, Lt = (
         float(base["L"]),
         float(surf["L"]),
@@ -292,19 +404,16 @@ def enforce_structural_L(
         float(text["L"]),
     )
 
-    # enforce strict ordering with tiny gaps
     eps = 1.0
     Ls = max(Ls, Lb + eps)
     Lo = max(Lo, Ls + eps)
     Lt = max(Lt, Lo + eps)
 
-    # enforce ΔL mins using palette constraints
     min_bt = pc.deltaL_min(PAIR_BG_TEXT)
     min_bs = pc.deltaL_min(PAIR_BG_SURF)
     min_so = pc.deltaL_min(PAIR_SURF_OVER)
     min_ot = pc.deltaL_min(PAIR_OVER_TEXT)
 
-    # push upwards in a single pass
     if (Lt - Lb) < min_bt:
         Lt = Lb + min_bt
     if (Ls - Lb) < min_bs:
@@ -314,18 +423,15 @@ def enforce_structural_L(
     if (Lt - Lo) < min_ot:
         Lt = Lo + min_ot
 
-    # clamp
     Lb = clamp(Lb, 0.0, 100.0)
     Ls = clamp(Ls, 0.0, 100.0)
     Lo = clamp(Lo, 0.0, 100.0)
     Lt = clamp(Lt, 0.0, 100.0)
 
-    # write back (keep a,b fixed)
     for key, newL in [("base", Lb), ("surface1", Ls), ("overlay1", Lo), ("text", Lt)]:
         r = assign[key]
         r["L"] = float(newL)
         r["hex"] = lab_to_rgb_hex(float(r["L"]), float(r["a"]), float(r["b"]))
-        # refresh derived metrics
         _, C, h = lab_to_lch(float(r["L"]), float(r["a"]), float(r["b"]))
         r["chroma"], r["hue"] = float(C), float(h)
 
@@ -376,10 +482,9 @@ def render_table(assignments: Dict[str, Dict[str, Any]], theme_name: str) -> Non
 def write_lua(
     assignments: Dict[str, Dict[str, Any]], out_lua: Path, theme_name: str
 ) -> None:
-    # only write elements that exist
     lines = []
     lines.append(f"local {theme_name} = {{")
-    for role in ROLE_ORDER[::-1]:  # background last in ROLE_ORDER; order not critical
+    for role in ROLE_ORDER[::-1]:
         for elem in ELEMENTS_BY_ROLE[role]:
             r = assignments.get(elem)
             if r is None:
@@ -399,10 +504,14 @@ def polish(
     assignments_in: Dict[str, Any],
     pool: pd.DataFrame,
     pc: PaletteConstraints,
+    *,
+    cool_min_deltal: float,
+    cool_rank_floor: float,
 ) -> Dict[str, Any]:
     """
-    Fill missing elements by selecting extracted colors and nudging them into constraint windows.
-    Always returns a dict with 16 elements present (some may be derived).
+    Fill missing elements by selecting extracted colors, but:
+      - Do NOT derive/darken accents (especially accent_cool).
+      - For accent_cool, enforce L >= base.L + cool_min_deltal and prefer high ranks.
     """
     assigned_raw = assignments_in.get("assigned", {})
     palette = assignments_in.get("palette")
@@ -410,45 +519,50 @@ def polish(
     assignments: Dict[str, Dict[str, Any]] = {
         k: normalize_assignment_row(v) for k, v in assigned_raw.items()
     }
-    # Ensure hex present for used tracking
+
+    # ensure hex + derived flag
     for k, v in assignments.items():
         v["hex"] = v.get("hex") or element_hex(v)
-        v.setdefault("derived", bool(v.get("derived", False)))
+        v["derived"] = bool(v.get("derived", False))
 
-    # pool normalization
-    pool = pool.copy()
-    if "hex" not in pool.columns:
-        raise click.ClickException("color_pool.csv must contain a 'hex' column")
-    if "role" not in pool.columns:
-        raise click.ClickException("color_pool.csv must contain a 'role' column")
-    for c in ["L", "a", "b", "chroma", "hue", "frequency", "score"]:
-        if c in pool.columns:
-            pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    pool = ensure_pool_columns(pool)
 
-    # Fill missing elements in a stable order: core UI first then accents
     all_elems = [e for r in ROLE_ORDER for e in ELEMENTS_BY_ROLE[r]]
     used_hex = {assignments[e]["hex"] for e in assignments if "hex" in assignments[e]}
 
-    # two-pass strategy: strict then relaxed
+    base_L: Optional[float] = None
+    if "base" in assignments and assignments["base"].get("L") is not None:
+        try:
+            base_L = float(assignments["base"]["L"])
+        except Exception:
+            base_L = None
+
+    # two-pass: strict then relaxed
     for relax in [False, True]:
         for elem in all_elems:
             if elem in assignments:
                 continue
+
             role = ROLE_BY_ELEMENT[elem]
 
             seed = pick_best_candidate(
-                pool, role=role, used_hex=used_hex, pc=pc, relax=relax
+                pool,
+                role=role,
+                used_hex=used_hex,
+                pc=pc,
+                relax=relax,
+                base_L=base_L,
+                cool_min_deltal=cool_min_deltal,
+                cool_rank_floor=cool_rank_floor,
             )
             if seed is None:
                 continue
 
-            # Ensure seed has Lab fields
-            need = ["L", "a", "b"]
-            if any(k not in seed or pd.isna(seed[k]) for k in need):
+            if any(k not in seed or pd.isna(seed[k]) for k in ["L", "a", "b"]):
                 continue
 
-            # Create derived color nudged into role constraints
-            seed_row = {
+            # Build row dict from pool seed
+            row = {
                 "R": int(seed.get("R", 0)) if not pd.isna(seed.get("R", np.nan)) else 0,
                 "G": int(seed.get("G", 0)) if not pd.isna(seed.get("G", np.nan)) else 0,
                 "B": int(seed.get("B", 0)) if not pd.isna(seed.get("B", np.nan)) else 0,
@@ -482,91 +596,152 @@ def polish(
                     else 0.0
                 ),
                 "role": role,
-                "seed_hex": str(seed.get("hex")),
+                "seed_hex": str(seed.get("hex", "")),
+                "hex": str(seed.get("hex", "")),
+                "derived": False,  # IMPORTANT: do not mark pool picks as derived
             }
-            nudged = nudge_into_role(seed_row, role, pc, relax=relax)
 
-            # uniqueness: if collision, perturb hue slightly in relaxed pass
-            if nudged["hex"] in used_hex and relax:
-                L, C, h = lab_to_lch(nudged["L"], nudged["a"], nudged["b"])
-                for dh in [8, -8, 16, -16, 24, -24]:
-                    L2, a2, b2 = lch_to_lab(L, C, (h + dh) % 360.0)
-                    hx = lab_to_rgb_hex(L2, a2, b2)
-                    if hx not in used_hex:
-                        nudged["L"], nudged["a"], nudged["b"] = L2, a2, b2
-                        nudged["hex"] = hx
-                        nudged["chroma"], nudged["hue"] = lab_to_lch(L2, a2, b2)[1:]
-                        break
+            # Ensure we at least align hue/chroma windows, but NEVER darken accents.
+            if role in ACCENT_ROLES:
+                min_L = None
+                forbid_L_decrease = True
+                lock_L = True
 
-            if nudged["hex"] in used_hex:
+                if role == "accent_cool" and base_L is not None:
+                    # enforce foreground-safe lightness for cool accents
+                    min_L = float(base_L) + float(cool_min_deltal)
+                    lock_L = False  # allow brightening upward if needed
+                    forbid_L_decrease = True
+
+                row2 = nudge_into_role(
+                    row,
+                    role,
+                    pc,
+                    relax=relax,
+                    base_L=base_L,
+                    cool_min_deltal=cool_min_deltal,
+                    lock_L=lock_L,
+                    min_L=min_L,
+                    forbid_L_decrease=forbid_L_decrease,
+                )
+
+                # If nudging changed the hex, mark derived (but we still prevented darkening)
+                if row2["hex"] != row["hex"]:
+                    row2["derived"] = True
+                row = row2
+
+            else:
+                # UI core elements: allow gentle chroma/hue nudge only; L handled later structurally
+                row2 = nudge_into_role(row, role, pc, relax=relax, lock_L=True)
+                if row2["hex"] != row["hex"]:
+                    row2["derived"] = True
+                row = row2
+
+            # uniqueness: if collision, skip (we do NOT hue-perturb accents into garbage)
+            if row["hex"] in used_hex:
                 continue
 
-            nudged["element"] = elem
-            assignments[elem] = nudged
-            used_hex.add(nudged["hex"])
+            row["element"] = elem
+            assignments[elem] = row
+            used_hex.add(row["hex"])
 
-        # If we completed all, stop
         if all(e in assignments for e in all_elems):
             break
 
-    # If still missing, derive from closest assigned element in Lab and force-fill
+    # If still missing, fill from pool WITHOUT creating dark derived accents.
     missing = [e for e in all_elems if e not in assignments]
     if missing:
-        # choose reference set among existing assignments
-        assigned_list = list(assignments.items())
         for elem in missing:
             role = ROLE_BY_ELEMENT[elem]
-            # pick closest in Lab (or just first)
-            if assigned_list:
-                ref_elem, ref = min(
-                    assigned_list,
-                    key=lambda kv: delta_e_lab(
-                        kv[1], kv[1]
-                    ),  # placeholder to satisfy typing
-                )
-                # actually choose by similarity to role center is complex; we just use highest frequency assigned
-                ref = max(
-                    (v for _, v in assigned_list),
-                    key=lambda v: float(v.get("frequency", 0.0)),
-                )
-            else:
-                # last resort: neutral gray
-                ref = {"L": 50.0, "a": 0.0, "b": 0.0, "frequency": 0.0, "score": 0.0}
 
-            base = dict(ref)
-            base["role"] = role
-            base["seed_hex"] = base.get("hex", "")
-            base = nudge_into_role(base, role, pc, relax=True)
+            seed = pick_best_candidate(
+                pool,
+                role=role,
+                used_hex=used_hex,
+                pc=pc,
+                relax=True,
+                base_L=base_L,
+                cool_min_deltal=cool_min_deltal,
+                cool_rank_floor=max(0.25, cool_rank_floor - 0.25),
+            )
 
-            # ensure uniqueness by hue perturb
-            if base["hex"] in used_hex:
-                L, C, h = lab_to_lch(base["L"], base["a"], base["b"])
-                for dh in range(15, 181, 15):
-                    for sign in [1, -1]:
-                        hh = (h + sign * dh) % 360.0
-                        L2, a2, b2 = lch_to_lab(L, C, hh)
-                        hx = lab_to_rgb_hex(L2, a2, b2)
-                        if hx not in used_hex:
-                            base["L"], base["a"], base["b"] = L2, a2, b2
-                            base["hex"] = hx
-                            base["chroma"], base["hue"] = lab_to_lch(L2, a2, b2)[1:]
-                            break
-                    if base["hex"] not in used_hex:
-                        break
+            if seed is None or any(
+                k not in seed or pd.isna(seed[k]) for k in ["L", "a", "b"]
+            ):
+                # last resort: neutral gray (only for UI core; for accents, leave missing)
+                if role in ACCENT_ROLES:
+                    continue
+                seed = {
+                    "L": 50.0,
+                    "a": 0.0,
+                    "b": 0.0,
+                    "hex": lab_to_rgb_hex(50.0, 0.0, 0.0),
+                    "role": role,
+                }
 
-            base["element"] = elem
-            base["derived"] = True
-            assignments[elem] = base
-            used_hex.add(base["hex"])
+            row = {
+                "L": float(seed["L"]),
+                "a": float(seed["a"]),
+                "b": float(seed["b"]),
+                "chroma": float(
+                    seed.get(
+                        "chroma",
+                        lab_to_lch(
+                            float(seed["L"]), float(seed["a"]), float(seed["b"])
+                        )[1],
+                    )
+                ),
+                "hue": float(
+                    seed.get(
+                        "hue",
+                        lab_to_lch(
+                            float(seed["L"]), float(seed["a"]), float(seed["b"])
+                        )[2],
+                    )
+                ),
+                "frequency": (
+                    float(seed.get("frequency", 0.0))
+                    if not pd.isna(seed.get("frequency", np.nan))
+                    else 0.0
+                ),
+                "score": (
+                    float(seed.get("score", 0.0))
+                    if not pd.isna(seed.get("score", np.nan))
+                    else 0.0
+                ),
+                "role": role,
+                "seed_hex": str(seed.get("hex", "")),
+                "hex": (
+                    str(seed.get("hex", ""))
+                    if isinstance(seed.get("hex", ""), str)
+                    else lab_to_rgb_hex(
+                        float(seed["L"]), float(seed["a"]), float(seed["b"])
+                    )
+                ),
+                "derived": False,
+                "element": elem,
+            }
+
+            # Enforce cool_min_deltal if we had to fallback
+            if role == "accent_cool" and base_L is not None:
+                if float(row["L"]) < float(base_L) + float(cool_min_deltal):
+                    # refuse to create a too-dark cool accent
+                    continue
+
+            if row["hex"] in used_hex:
+                continue
+
+            assignments[elem] = row
+            used_hex.add(row["hex"])
 
     # Best-effort structural enforcement after fill
     enforce_structural_L(assignments, pc)
 
-    # output payload
+    # Output
     out = {
         "palette": palette,
         "assigned": {k: v for k, v in assignments.items()},
-        "missing": [],
+        "missing": [e for e in all_elems if e not in assignments],
     }
     return out
 
@@ -605,6 +780,20 @@ def polish(
 @click.option(
     "--no-render", is_flag=True, default=False, help="Disable rich table output."
 )
+@click.option(
+    "--cool-min-deltal",
+    default=24.0,
+    show_default=True,
+    type=float,
+    help="Minimum L* separation from base for accent_cool (enforces L >= base.L + this).",
+)
+@click.option(
+    "--cool-rank-floor",
+    default=0.60,
+    show_default=True,
+    type=float,
+    help="Percentile floor for accent_cool ranks (deltaE_bg_rank / abs_deltaL_bg_rank) when available.",
+)
 def main(
     assignments_json: Path,
     color_pool_csv: Path,
@@ -613,6 +802,8 @@ def main(
     out_lua: Optional[Path],
     theme_name: str,
     no_render: bool,
+    cool_min_deltal: float,
+    cool_rank_floor: float,
 ):
     assignments_in = json.loads(assignments_json.read_text())
     pool = pd.read_csv(color_pool_csv)
@@ -633,11 +824,17 @@ def main(
         hue=constraints_all["constraints"]["hue"][palette],
     )
 
-    # ensure pool has palette-consistent rows
     if "palette" in pool.columns:
         pool = pool[pool["palette"] == palette].copy()
 
-    out = polish(assignments_in, pool, pc)
+    out = polish(
+        assignments_in,
+        pool,
+        pc,
+        cool_min_deltal=cool_min_deltal,
+        cool_rank_floor=cool_rank_floor,
+    )
+
     out_json.write_text(json.dumps(out, indent=2))
 
     if not no_render:
