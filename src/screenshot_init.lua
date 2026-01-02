@@ -84,7 +84,7 @@ _G.__codeshot_capture = function(out_path)
 
 	-- Full range "1..N"  [oai_citation:4‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
 	local n = #buf_lines
-	local lines = ("1..%d"):format(n)
+	local lines = ("82..100"):format(n)
 
 	-- Configure output image path, then take screenshot of temp file
 	codeshot.setup({
@@ -97,7 +97,7 @@ _G.__codeshot_capture = function(out_path)
 		save_format = "png",
 	})
 
-	codeshot.take(tmp, "lua", lines, nil) -- file=tmp, lines="start..end"  [oai_citation:9‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
+	codeshot.take("extract_colors.py", "py", lines, nil) -- file=tmp, lines="start..end"  [oai_citation:9‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
 
 	-- Wait for async renderer to finish writing output
 	local ok = vim.wait(15000, function()
