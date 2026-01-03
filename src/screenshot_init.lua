@@ -32,40 +32,52 @@ vim.opt.showmode = false
 vim.opt.laststatus = 2
 vim.opt.cmdheight = 0
 
+local function log(msg)
+	vim.api.nvim_err_writeln("[codeshot-init] " .. msg)
+end
+
 -- Load dependencies + your plugin
 require("catppuccin")
+log("catppuccin module loaded")
 require("savitsky").setup()
 
 local codeshot = require("codeshot")
+log("before setup")
 codeshot.setup({
 	silent = true,
 	use_current_theme = true,
-	show_line_numbers = false,
+	show_line_numbers = true,
 	shadow = false,
 	save_format = "png",
 })
+log("done")
 
--- Buffer content to screenshot
+-- ------------------------------------------------------------
+-- Load extract_colors.py into the buffer (repo-relative)
+-- ------------------------------------------------------------
+local py_path = "extract_colors.py"
+local ok = (vim.fn.filereadable(py_path) == 1)
+if not ok then
+	error("codeshot-init: cannot read file: " .. py_path)
+end
+
 vim.cmd("enew")
-vim.bo.filetype = "lua"
-vim.api.nvim_buf_set_lines(0, 0, -1, false, {
-	"-- Theme preview",
-	"",
-	"local function hello(name)",
-	"  if name == nil then",
-	"    return 'world'",
-	"  end",
-	"  return 'hello ' .. name",
-	"end",
-	"",
-	"print(hello('neovim'))",
-})
+-- vim.bo.buftype = "python"
+vim.bo.swapfile = false
+
+-- Read file into buffer
+local lines = vim.fn.readfile(py_path)
+vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+-- Make sure syntax is Python (for both Neovim + sss_code extension later)
+vim.bo.filetype = "python"
 
 -- Select whole buffer for codeshot.selected_lines()
 vim.cmd("normal! ggVG")
 vim.bo.modified = false
 
 local uv = vim.loop
+log("wtf")
 
 _G.__codeshot_capture = function(out_path)
 	-- Ensure output directory exists
@@ -77,14 +89,11 @@ _G.__codeshot_capture = function(out_path)
 		error("codeshot: required binary 'sss_code' not found in PATH")
 	end
 
-	-- Write current buffer to a temp file (codeshot.take expects a file path)  [oai_citation:3‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-	local tmp = vim.fn.tempname() .. ".lua"
+	local tmp = vim.fn.tempname() .. ".py"
 	local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 	vim.fn.writefile(buf_lines, tmp)
 
-	-- Full range "1..N"  [oai_citation:4‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-	local n = #buf_lines
-	local lines = ("82..100"):format(n)
+	local lines = "82..100"
 
 	-- Configure output image path, then take screenshot of temp file
 	codeshot.setup({
@@ -97,7 +106,10 @@ _G.__codeshot_capture = function(out_path)
 		save_format = "png",
 	})
 
-	codeshot.take("extract_colors.py", "py", lines, nil) -- file=tmp, lines="start..end"  [oai_citation:9‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
+	assert(vim.fn.filereadable(tmp) == 1, "temp file not readable: " .. tmp)
+	log("TMP=" .. tmp)
+	log("readable=" .. vim.fn.filereadable(tmp))
+	codeshot.take(tmp, "py", lines, nil) -- file=tmp, lines="start..end"  [oai_citation:9‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
 
 	-- Wait for async renderer to finish writing output
 	local ok = vim.wait(15000, function()

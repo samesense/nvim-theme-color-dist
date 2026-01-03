@@ -124,6 +124,7 @@ rule render_screenshot:
         nvim --headless \
         -u screenshot_init.lua \
         +"lua require('savitsky').load('{wildcards.img}')" \
+        +"lua vim.cmd('redraw!')" \
         +"lua __codeshot_capture('{output}')" \
         +qa! && cp {output} {params.repo_png}
         """
