@@ -41,7 +41,7 @@ def write_registry(path: Path, entries: list[str]):
 )
 @click.option(
     "--module",
-    default="yourthemes",
+    default="savitsky",
     show_default=True,
     help="Lua module root for require paths",
 )

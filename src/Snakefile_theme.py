@@ -59,6 +59,14 @@ def mk_repo_reg(wc):
     if wc.theme_pack == 'savitsky':
         return pathlib.Path('/Users/perry/projects/savitsky.nvim/lua/savitsky/registry.lua')
 
+def mk_repo_demo(wc):
+    if wc.theme_pack == 'savitsky':
+        return pathlib.Path('/Users/perry/projects/savitsky.nvim/lua/savitsky/registry.lua')
+
+def mk_repo_png(wc):
+    if wc.theme_pack == 'savitsky':
+        return pathlib.Path('/Users/perry/projects/savitsky.nvim/docs/demo/') / f'{wc.img}.png'
+
 rule split_theme_lua:
     """
     Cp generated theme lua into plugin repo and test palette dirs 
@@ -95,7 +103,7 @@ rule build_registry:
     shell:
         """
         python build_registry.py \
-            --palettes-dir {END}/{wildcards.theme_pack}/palettes \
+            --palettes-dir {SRC}/lua/{wildcards.theme_pack}/palettes \
             --out {output.registry} && cp {output.registry} {params.plug_registry}
         """
 
@@ -104,20 +112,20 @@ rule render_screenshot:
     Render Neovim UI screenshot for each theme
     """
     input:
-        palette = END / "{theme_pack}/palettes/{img}.lua",
-        registry = END / "{theme_pack}_registry.lua",
-        highlights = RAW / "lua/{theme_pack}/highlights/default.lua",
+        palette = SRC / "lua/{theme_pack}/palettes/{img}.lua",
+        registry = SRC / "lua/{theme_pack}/registry.lua",
     output:
         png = DOCS / "demo/{theme_pack}/{img}.png",
     params:
         theme = "{img}",
+        repo_png = mk_repo_png,
     shell:
         """
         nvim --headless \
         -u screenshot_init.lua \
         +"lua require('savitsky').load('{wildcards.img}')" \
         +"lua __codeshot_capture('{output}')" \
-        +qa!
+        +qa! && cp {output} {params.repo_png}
         """
 #
 # rule build_docs_index:

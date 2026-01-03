@@ -12,9 +12,9 @@ rule all:
         END / "figures/deltaL_margins.png",
         END / "figures/chroma_by_role.png",
         END / "figures/hue.png",
-        SRC / "lua/savitsky/registry.lua",
+        #SRC / "lua/savitsky/registry.lua",
         #expand(END / "savitsky/palettes/{img}.lua", img=IMGS['savitsky']),
-        #expand(DOCS / 'demo/savitsky/{img}.png', img=IMGS['savitsky']),
+        expand(DOCS / 'demo/savitsky/{img}.png', img=IMGS['savitsky']),
 
 onsuccess:
     shell('curl -d "colors done 🥳" ntfy.sh/perry-runs')

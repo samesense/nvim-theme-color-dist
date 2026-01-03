@@ -1,7 +1,6 @@
 local M = {}
 
 local registry = require("savitsky.registry")
-local highlights = require("savitsky.highlights.default") -- shared highlight function
 
 function M.setup()
 	-- optional: nothing required here, but keep for API symmetry
@@ -20,9 +19,6 @@ function M.load(name)
 		flavour = theme.flavour,
 		color_overrides = {
 			[theme.flavour] = theme.palette,
-		},
-		highlight_overrides = {
-			[theme.flavour] = highlights,
 		},
 	})
 
