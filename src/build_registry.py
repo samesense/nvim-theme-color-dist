@@ -45,17 +45,10 @@ def write_registry(path: Path, entries: list[str]):
     show_default=True,
     help="Lua module root for require paths",
 )
-@click.option(
-    "--highlight-module",
-    default="yourthemes.highlights.default",
-    show_default=True,
-    help="Lua require path for the shared highlight file",
-)
 def main(
     palettes_dir: Path,
     out_file: Path,
     module: str,
-    highlight_module: str,
 ):
     """
     Build theme registry with a shared highlight file.
@@ -83,15 +76,12 @@ def main(
         entry = f'  ["{name}"] = {{\n'
         entry += f'    flavour = "{flavour}",\n'
         entry += f'    palette = require("{palette_req}"),\n'
-        entry += f'    highlights = require("{highlight_module}"),\n'
         entry += "  },"
 
         entries.append(entry)
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
     write_registry(out_file, entries)
-
-    click.echo(f"[build_registry] wrote registry → {out_file}")
 
 
 if __name__ == "__main__":

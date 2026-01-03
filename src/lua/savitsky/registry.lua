@@ -1,32 +1,34 @@
 return {
   ["abstractBoxes"] = {
     flavour = "mocha",
-    palette = require("savitsky.palettes.abstractBoxes"),
-    highlights = require("savitsky.highlights.default"),
+    palette = require("yourthemes.palettes.abstractBoxes"),
   },
   ["bull"] = {
     flavour = "mocha",
-    palette = require("savitsky.palettes.bull"),
-    highlights = require("savitsky.highlights.default"),
+    palette = require("yourthemes.palettes.bull"),
   },
   ["camels"] = {
     flavour = "mocha",
-    palette = require("savitsky.palettes.camels"),
-    highlights = require("savitsky.highlights.default"),
+    palette = require("yourthemes.palettes.camels"),
   },
   ["couple"] = {
     flavour = "mocha",
-    palette = require("savitsky.palettes.couple"),
-    highlights = require("savitsky.highlights.default"),
+    palette = require("yourthemes.palettes.couple"),
+  },
+  ["forest"] = {
+    flavour = "mocha",
+    palette = require("yourthemes.palettes.forest"),
   },
   ["industry"] = {
     flavour = "mocha",
-    palette = require("savitsky.palettes.industry"),
-    highlights = require("savitsky.highlights.default"),
+    palette = require("yourthemes.palettes.industry"),
+  },
+  ["man"] = {
+    flavour = "mocha",
+    palette = require("yourthemes.palettes.man"),
   },
   ["witch"] = {
     flavour = "mocha",
-    palette = require("savitsky.palettes.witch"),
-    highlights = require("savitsky.highlights.default"),
+    palette = require("yourthemes.palettes.witch"),
   },
 }

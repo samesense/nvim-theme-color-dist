@@ -51,25 +51,36 @@ rule fill_elements:
             --theme-name {params.tname}
         """
 
+def get_repo_pal(wc):
+    if wc.theme_pack == 'savitsky':
+        return pathlib.Path('/Users/perry/projects/savitsky.nvim/lua/savitsky/palettes/') / f"{wc.img}.lua"
+
+def mk_repo_reg(wc):
+    if wc.theme_pack == 'savitsky':
+        return pathlib.Path('/Users/perry/projects/savitsky.nvim/lua/savitsky/registry.lua')
+
 rule split_theme_lua:
     """
-    Split generated theme lua into palette and highlight modules
+    Cp generated theme lua into plugin repo and test palette dirs 
     """
     input:
         theme = END / "{img}_theme.lua",
     output:
-        palette = END / "{theme_pack}/palettes/{img}.lua",
+        palette = SRC / 'lua/{theme_pack}/palettes/{img}.lua',
+    params:
+        pub_lua = get_repo_pal,
     shell:
         """
         python split_theme.py \
             --in-lua {input.theme} \
             --out-palette {output.palette} \
-            && stylua {output.palette}
+            && stylua {output.palette} \
+            && cp {output.palette} {params.pub_lua}
         """
 
 def mk_palette_reg(wc):
     img_ls = IMGS[wc.theme_pack]
-    return [END / f"{wc.theme_pack}/palettes/{img}.lua" for img in img_ls]
+    return [SRC / f"lua/{wc.theme_pack}/palettes/{img}.lua" for img in img_ls]
 
 rule build_registry:
     """
@@ -78,12 +89,14 @@ rule build_registry:
     input:
         palettes = mk_palette_reg, 
     output:
-        registry = END / "{theme_pack}_registry.lua",
+        registry = SRC / "lua/{theme_pack}/registry.lua",
+    params:
+        plug_registry = mk_repo_reg,
     shell:
         """
         python build_registry.py \
             --palettes-dir {END}/{wildcards.theme_pack}/palettes \
-            --out {output.registry}
+            --out {output.registry} && cp {output.registry} {params.plug_registry}
         """
 
 rule render_screenshot:

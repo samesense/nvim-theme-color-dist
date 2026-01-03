@@ -68,9 +68,6 @@ def main(in_lua: Path, out_palette: Path):
         click.echo(f"[split_theme] Failed to write output: {e}", err=True)
         sys.exit(1)
 
-    click.echo(f"[split_theme] extracted palette '{name}'")
-    click.echo(f"[split_theme] wrote palette → {out_palette}")
-
 
 if __name__ == "__main__":
     main()
