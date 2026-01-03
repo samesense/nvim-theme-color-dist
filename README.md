@@ -84,3 +84,5 @@ surprisingly well into editor UI palettes.
 * contrast ratios (WCAG)
 * spatial adjacency (UI context)
 * perceptual salience interactions (future)
+* git under control
+* submodules
