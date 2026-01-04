@@ -42,14 +42,15 @@ log("catppuccin module loaded")
 require("savitsky").setup()
 
 local codeshot = require("codeshot")
-log("before setup")
-codeshot.setup({
-	silent = true,
-	use_current_theme = true,
-	show_line_numbers = true,
-	shadow = false,
-	save_format = "png",
-})
+-- log("before setup")
+-- codeshot.setup({
+-- 	silent = true,
+-- 	use_current_theme = true,
+-- 	show_line_numbers = true,
+-- 	shadow = false,
+-- 	save_format = "png",
+-- 	background = "",
+-- })
 log("done")
 
 -- ------------------------------------------------------------
@@ -104,11 +105,23 @@ _G.__codeshot_capture = function(out_path)
 		show_line_numbers = true,
 		shadow = false,
 		save_format = "png",
+		background = "",
 	})
 
 	assert(vim.fn.filereadable(tmp) == 1, "temp file not readable: " .. tmp)
 	log("TMP=" .. tmp)
 	log("readable=" .. vim.fn.filereadable(tmp))
+	require("savitsky").load("industry")
+	vim.cmd("redraw!")
+	-- local theme = registry["industry"]
+	-- assert(
+	-- 	vim.g.colors_name == ("catppuccin-" .. theme.flavour),
+	-- 	"colorscheme not active: " .. tostring(vim.g.colors_name)
+	-- )
+	local hl = vim.api.nvim_get_hl(0, { name = "String", link = false })
+	assert(hl.fg ~= nil, "String.fg is nil (theme not applied/resolved)")
+	log(hl.fg)
+	vim.wait(10)
 	codeshot.take(tmp, "py", lines, nil) -- file=tmp, lines="start..end"  [oai_citation:9‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
 
 	-- Wait for async renderer to finish writing output

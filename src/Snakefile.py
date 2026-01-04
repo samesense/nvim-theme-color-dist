@@ -5,7 +5,7 @@ include: "Snakefile_theme.py"
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"
 # bads: witch / couple
 IMGS = {'savitsky': ('abstractBoxes', 'camels', 'bull', 'industry', 'man', 'forest', 'witch', 'couple',)}
-#IMGS = {'savitsky': ( 'industry',)}
+IMGS = {'savitsky': ( 'industry',)}
 
 rule all:
     input:

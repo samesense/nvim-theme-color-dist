@@ -23,6 +23,12 @@ function M.load(name)
 	})
 
 	vim.cmd.colorscheme("catppuccin-" .. theme.flavour)
+	vim.cmd("redraw!")
+	local theme = registry["industry"]
+	assert(
+		vim.g.colors_name == ("catppuccin-" .. theme.flavour),
+		"colorscheme not active: " .. tostring(vim.g.colors_name)
+	)
 end
 
 return M
