@@ -208,7 +208,15 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
 # ============================================================
 
 
-def fill_ui(pool, assignments):
+def get_offset(constraints, offset_name, fallback):
+    """Get learned element offset, with fallback for missing constraints."""
+    offsets = constraints.get("element_offsets", {})
+    if offset_name in offsets:
+        return offsets[offset_name].get("value", fallback)
+    return fallback
+
+
+def fill_ui(pool, assignments, constraints):
     used = {norm_hex(hex_from_row(v)) for v in assignments.values()}
 
     def pick(role, target_L):
@@ -228,15 +236,56 @@ def fill_ui(pool, assignments):
     over = assignments.get("overlay1")
     text = assignments.get("text")
 
+    # Use learned offsets from Catppuccin constraints
     for k, r in {
-        "mantle": pick("background", base.L + 4),
-        "crust": pick("background", base.L - 4),
-        "surface0": pick("surface", surf.L - 6),
-        "surface2": pick("surface", surf.L + 6),
-        "overlay0": pick("overlay", over.L - 6) if over is not None else None,
-        "overlay2": pick("overlay", over.L + 6) if over is not None else None,
-        "subtext1": pick("text", text.L - 6) if text is not None else None,
-        "subtext0": pick("text", text.L - 12) if text is not None else None,
+        "mantle": pick(
+            "background",
+            base.L + get_offset(constraints, "mantle_from_base", -3.0),
+        ),
+        "crust": pick(
+            "background",
+            base.L + get_offset(constraints, "crust_from_base", -6.5),
+        ),
+        "surface0": pick(
+            "surface",
+            surf.L + get_offset(constraints, "surface0_from_surface1", -9.0),
+        ),
+        "surface2": pick(
+            "surface",
+            surf.L + get_offset(constraints, "surface2_from_surface1", 8.5),
+        ),
+        "overlay0": (
+            pick(
+                "overlay",
+                over.L + get_offset(constraints, "overlay0_from_overlay1", -8.0),
+            )
+            if over is not None
+            else None
+        ),
+        "overlay2": (
+            pick(
+                "overlay",
+                over.L + get_offset(constraints, "overlay2_from_overlay1", 8.0),
+            )
+            if over is not None
+            else None
+        ),
+        "subtext1": (
+            pick(
+                "text",
+                text.L + get_offset(constraints, "subtext1_from_text", -7.0),
+            )
+            if text is not None
+            else None
+        ),
+        "subtext0": (
+            pick(
+                "text",
+                text.L + get_offset(constraints, "subtext0_from_text", -15.0),
+            )
+            if text is not None
+            else None
+        ),
     }.items():
         if r is not None:
             assignments[k] = r
@@ -249,20 +298,39 @@ def fill_ui(pool, assignments):
 # ============================================================
 
 
+def get_accent_min_deltal(constraints, role, polarity, fallback):
+    """
+    Get learned minimum L* separation for an accent role from constraints.
+
+    Uses accent_separation[polarity][role]["min"], with fallback.
+    """
+    sep = constraints.get("accent_separation", {})
+    pol_sep = sep.get(polarity, {})
+    role_sep = pol_sep.get(role, {})
+    return role_sep.get("min", fallback)
+
+
 def pick_accents(
     pool: pd.DataFrame,
     assignments: dict,
     constraints: dict,
     *,
     cool_rank_floor: float = 0.60,
-    cool_min_deltal: float = 24.0,
-    accent_min_deltal: float = 18.0,
+    cool_min_deltal: float | None = None,
+    accent_min_deltal: float | None = None,
 ):
+    """
+    Select accent colors from pool, respecting hue and L* separation constraints.
+
+    If cool_min_deltal or accent_min_deltal are None, uses learned values from
+    constraints["accent_separation"].
+    """
     used = {norm_hex(hex_from_row(v)) for v in assignments.values()}
 
     base = assignments.get("base")
     base_L = float(base.L) if base is not None else None
-    is_dark = base_L is not None and base_L < 50.0  # heuristic
+    is_dark = base_L is not None and base_L < 50.0
+    polarity = "dark" if is_dark else "light"
 
     for role in ACCENT_ROLES:
         elems = ELEMENTS_BY_ROLE[role]
@@ -281,12 +349,26 @@ def pick_accents(
         else:
             cand = sub
 
+        # Get role-specific min L* separation (learned or override)
+        if role == "accent_cool":
+            min_deltal = (
+                cool_min_deltal
+                if cool_min_deltal is not None
+                else get_accent_min_deltal(constraints, role, polarity, 48.0)
+            )
+        else:
+            min_deltal = (
+                accent_min_deltal
+                if accent_min_deltal is not None
+                else get_accent_min_deltal(constraints, role, polarity, 43.0)
+            )
+
         # Require accents to be separated from base in L* (only if it doesn't wipe everything)
         if base_L is not None and "L" in cand.columns:
             if is_dark:
-                floored = cand[cand["L"] >= (base_L + float(accent_min_deltal))].copy()
+                floored = cand[cand["L"] >= (base_L + abs(min_deltal))].copy()
             else:
-                floored = cand[cand["L"] <= (base_L - float(accent_min_deltal))].copy()
+                floored = cand[cand["L"] <= (base_L - abs(min_deltal))].copy()
             if not floored.empty:
                 cand = floored
 
@@ -299,12 +381,12 @@ def pick_accents(
         )
 
         if role == "accent_cool":
-            # stronger cool FG-safety
+            # stronger cool FG-safety (min_deltal already set above from learned constraints)
             if base_L is not None and "L" in cand.columns:
                 if is_dark:
-                    cand = cand[cand["L"] >= (base_L + float(cool_min_deltal))]
+                    cand = cand[cand["L"] >= (base_L + abs(min_deltal))]
                 else:
-                    cand = cand[cand["L"] <= (base_L - float(cool_min_deltal))]
+                    cand = cand[cand["L"] <= (base_L - abs(min_deltal))]
 
                 # Relax if empty but still prefer "not darker than base" in dark themes
                 if cand.empty:
@@ -448,17 +530,15 @@ def row_to_dict(r):
 )
 @click.option(
     "--cool-min-deltal",
-    default=24.0,
-    show_default=True,
+    default=None,
     type=float,
-    help="Minimum (cool.L - base.L) for accent_cool foreground safety (relaxed if needed).",
+    help="Override learned minimum L* separation for accent_cool (default: use learned constraint).",
 )
 @click.option(
     "--accent-min-deltal",
-    default=18.0,
-    show_default=True,
+    default=None,
     type=float,
-    help="Minimum L* separation from base for non-cool accents when base is dark (or inverse if base is light).",
+    help="Override learned minimum L* separation for non-cool accents (default: use learned constraint).",
 )
 def main(
     color_pool_csv,
@@ -484,10 +564,14 @@ def main(
         "deltaL": constraints_all["constraints"]["deltaL"][palette],
         "chroma": constraints_all["constraints"]["chroma"][palette],
         "hue": constraints_all["constraints"]["hue"][palette],
+        "element_offsets": constraints_all["constraints"].get("element_offsets", {}).get(
+            palette, {}
+        ),
+        "accent_separation": constraints_all["constraints"].get("accent_separation", {}),
     }
 
     assignments = pick_structural(pool, constraints)
-    assignments = fill_ui(pool, assignments)
+    assignments = fill_ui(pool, assignments, constraints)
     assignments = pick_accents(
         pool,
         assignments,

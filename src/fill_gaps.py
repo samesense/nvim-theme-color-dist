@@ -105,6 +105,7 @@ class PaletteConstraints:
     deltaL: Dict[str, Dict[str, float]]
     chroma: Dict[str, Dict[str, float]]
     hue: Dict[str, Dict[str, float]]
+    accent_separation: Dict[str, Dict[str, Dict[str, float]]] = None  # polarity -> role -> stats
 
     def deltaL_min(self, pair: str) -> float:
         return float(self.deltaL[pair]["q25"])
@@ -118,6 +119,13 @@ class PaletteConstraints:
     def chroma_q75(self, role: str) -> float:
         return float(self.chroma[role]["q75"])
 
+    def chroma_relax_delta(self, role: str, fallback: float = 8.0) -> float:
+        """Get learned chroma relaxation delta for a role."""
+        x = self.chroma.get(role)
+        if x and "relax_delta" in x:
+            return float(x["relax_delta"])
+        return fallback
+
     def hue_center(self, role: str) -> Optional[float]:
         x = self.hue.get(role)
         return float(x["center"]) if x and "center" in x else None
@@ -125,6 +133,21 @@ class PaletteConstraints:
     def hue_width(self, role: str) -> Optional[float]:
         x = self.hue.get(role)
         return float(x["width"]) if x and "width" in x else None
+
+    def hue_relax_mult(self, role: str, fallback: float = 1.3) -> float:
+        """Get learned hue window relaxation multiplier for a role."""
+        x = self.hue.get(role)
+        if x and "relax_mult" in x:
+            return float(x["relax_mult"])
+        return fallback
+
+    def accent_min_deltal(self, role: str, polarity: str, fallback: float = 43.0) -> float:
+        """Get learned minimum L* separation for an accent role."""
+        if self.accent_separation is None:
+            return fallback
+        pol_sep = self.accent_separation.get(polarity, {})
+        role_sep = pol_sep.get(role, {})
+        return abs(role_sep.get("min", fallback))
 
 
 # ============================================================
@@ -187,24 +210,26 @@ def nudge_into_role(
     L0, a0, b0 = float(row["L"]), float(row["a"]), float(row["b"])
     L, C, h = lab_to_lch(L0, a0, b0)
 
-    # chroma target band
+    # chroma target band (use learned relax_delta)
     if role in pc.chroma:
         q25 = pc.chroma_q25(role)
         q75 = pc.chroma_q75(role)
         if relax:
-            q25 = max(0.0, q25 - 8.0)
-            q75 = q75 + 8.0
+            relax_delta = pc.chroma_relax_delta(role)
+            q25 = max(0.0, q25 - relax_delta)
+            q75 = q75 + relax_delta
 
         if C < q25:
             C = q25
         elif C > q75:
             C = q75
 
-    # hue window for accents only
+    # hue window for accents only (use learned relax_mult)
     hc = pc.hue_center(role)
     hw = pc.hue_width(role)
     if hc is not None and hw is not None:
-        half = (hw / 2.0) * (1.3 if relax else 1.0)
+        relax_mult = pc.hue_relax_mult(role) if relax else 1.0
+        half = (hw / 2.0) * relax_mult
         if circ_dist_deg(h, hc) > half:
             if relax:
                 h = hc
@@ -237,18 +262,21 @@ def _base_is_dark(assignments: Dict[str, Dict[str, Any]]) -> Optional[bool]:
 
 def enforce_accent_foreground_deltaL(
     assignments: Dict[str, Dict[str, Any]],
+    pc: PaletteConstraints,
     *,
     roles: Tuple[str, ...] = ("accent_cool", "accent_bridge"),
-    min_deltal_dark: float = 18.0,
-    min_deltal_light: float = 18.0,
+    min_deltal_override: Optional[float] = None,
 ) -> None:
     """
     Prevent "dark blues relative to the background" (and similar) by forcing
     accent roles that are commonly used as foreground to be directionally separated
     from base in L*.
 
-    Dark theme:  accent L >= base_L + min_deltal_dark
-    Light theme: accent L <= base_L - min_deltal_light
+    Uses learned accent_separation constraints from PaletteConstraints, or
+    min_deltal_override if provided.
+
+    Dark theme:  accent L >= base_L + min_deltal
+    Light theme: accent L <= base_L - min_deltal
 
     Adjusts L only; keeps a,b constant.
     """
@@ -256,19 +284,26 @@ def enforce_accent_foreground_deltaL(
         return
     base_L = float(assignments["base"]["L"])
     is_dark = base_L < 50.0
+    polarity = "dark" if is_dark else "light"
 
     for role in roles:
+        # Get role-specific min separation (learned or override)
+        if min_deltal_override is not None:
+            min_deltal = min_deltal_override
+        else:
+            min_deltal = pc.accent_min_deltal(role, polarity)
+
         for elem in ELEMENTS_BY_ROLE[role]:
             if elem not in assignments:
                 continue
             r = assignments[elem]
             L = float(r["L"])
             if is_dark:
-                target = base_L + float(min_deltal_dark)
+                target = base_L + min_deltal
                 if L < target:
                     r["L"] = clamp(target, 0.0, 100.0)
             else:
-                target = base_L - float(min_deltal_light)
+                target = base_L - min_deltal
                 if L > target:
                     r["L"] = clamp(target, 0.0, 100.0)
 
@@ -293,7 +328,7 @@ def pick_best_candidate(
     base_L: Optional[float],
     is_dark: Optional[bool],
     fg_roles: Tuple[str, ...],
-    fg_min_deltal: float,
+    fg_min_deltal: Optional[float],
 ) -> Optional[Dict[str, Any]]:
     """
     Choose a seed extracted color (row) to use for the given role/element.
@@ -329,15 +364,19 @@ def pick_best_candidate(
         and role in fg_roles
         and "L" in sub.columns
     ):
+        # Use learned value if fg_min_deltal not provided
+        polarity = "dark" if is_dark else "light"
+        min_deltal = fg_min_deltal if fg_min_deltal is not None else pc.accent_min_deltal(role, polarity)
+
         if is_dark:
-            strict = sub[sub["L"] >= (base_L + fg_min_deltal)].copy()
+            strict = sub[sub["L"] >= (base_L + min_deltal)].copy()
             if strict.empty and relax:
                 # relaxed: at least not darker than base
                 strict = sub[sub["L"] >= base_L].copy()
             if not strict.empty:
                 sub = strict
         else:
-            strict = sub[sub["L"] <= (base_L - fg_min_deltal)].copy()
+            strict = sub[sub["L"] <= (base_L - min_deltal)].copy()
             if strict.empty and relax:
                 strict = sub[sub["L"] <= base_L].copy()
             if not strict.empty:
@@ -473,7 +512,7 @@ def polish(
     pool: pd.DataFrame,
     pc: PaletteConstraints,
     *,
-    fg_min_deltal: float,
+    fg_min_deltal: Optional[float],
     fg_roles: Tuple[str, ...],
     enforce_after_fill: bool,
 ) -> Dict[str, Any]:
@@ -579,13 +618,16 @@ def polish(
 
             # Foreground-safety also applied to derived colors (important!)
             if base_L is not None and is_dark is not None and role in fg_roles:
+                polarity = "dark" if is_dark else "light"
+                min_deltal = fg_min_deltal if fg_min_deltal is not None else pc.accent_min_deltal(role, polarity)
+
                 Lm = float(nudged["L"])
                 if is_dark:
-                    target = base_L + float(fg_min_deltal)
+                    target = base_L + min_deltal
                     if Lm < target:
                         nudged["L"] = clamp(target, 0.0, 100.0)
                 else:
-                    target = base_L - float(fg_min_deltal)
+                    target = base_L - min_deltal
                     if Lm > target:
                         nudged["L"] = clamp(target, 0.0, 100.0)
 
@@ -630,9 +672,9 @@ def polish(
     if enforce_after_fill:
         enforce_accent_foreground_deltaL(
             assignments,
+            pc,
             roles=fg_roles,
-            min_deltal_dark=fg_min_deltal,
-            min_deltal_light=fg_min_deltal,
+            min_deltal_override=fg_min_deltal,
         )
 
     out = {
@@ -679,10 +721,9 @@ def polish(
 )
 @click.option(
     "--fg-min-deltal",
-    default=24.0,
-    show_default=True,
+    default=None,
     type=float,
-    help="Directional minimum L* separation from base for foreground-ish accents (prevents dark blues on dark base).",
+    help="Override learned minimum L* separation for foreground accents (default: use learned constraint).",
 )
 @click.option(
     "--fg-roles",
@@ -704,7 +745,7 @@ def main(
     out_lua: Optional[Path],
     theme_name: str,
     no_render: bool,
-    fg_min_deltal: float,
+    fg_min_deltal: Optional[float],
     fg_roles: str,
     enforce_after_fill: bool,
 ):
@@ -725,6 +766,7 @@ def main(
         deltaL=constraints_all["constraints"]["deltaL"][palette],
         chroma=constraints_all["constraints"]["chroma"][palette],
         hue=constraints_all["constraints"]["hue"][palette],
+        accent_separation=constraints_all["constraints"].get("accent_separation", {}),
     )
 
     if "palette" in pool.columns:

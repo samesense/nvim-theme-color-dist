@@ -70,6 +70,38 @@ rule hue_trend_data:
             {input} {output}
         """
 
+rule element_offsets:
+    """
+    Compute L* offsets between element variants within each role.
+    Replaces hardcoded +4, -4, +6, -6, -12 magic numbers.
+    """
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        csv = INT / "constraints/element_offsets.csv",
+    shell:
+        """
+        python compute_element_offsets.py \
+            --lab-csv {input} \
+            --out-csv {output.csv}
+        """
+
+rule accent_separation:
+    """
+    Compute accent-to-background L* separation by polarity.
+    Replaces hardcoded cool_min_deltal and accent_min_deltal.
+    """
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        csv = INT / "constraints/accent_separation.csv",
+    shell:
+        """
+        python compute_accent_separation.py \
+            --lab-csv {input} \
+            --out-csv {output.csv}
+        """
+
 rule plot_hue_trend_data:
     input:
         csv = INT / "constraints/hue.csv",
@@ -83,14 +115,16 @@ rule plot_hue_trend_data:
 
 rule build_palette_constraints:
     """
-    Build palette-level constraints (lightness, chroma, hue, polarity)
-    learned from Catppuccin palettes.
+    Build palette-level constraints (lightness, chroma, hue, polarity,
+    element offsets, accent separation) learned from Catppuccin palettes.
     """
     input:
         colors = INT / 'cap_colors.csv',
         deltaL = INT / "constraints/deltaL_margins.csv",
         chroma = INT / "constraints/chroma_role.csv",
         hue    = INT / "constraints/hue.csv",
+        offsets = INT / "constraints/element_offsets.csv",
+        separation = INT / "constraints/accent_separation.csv",
     output:
         json = INT / "constraints/palette_constraints.json",
     shell:
@@ -100,5 +134,7 @@ rule build_palette_constraints:
             --deltal-csv {input.deltaL} \
             --chroma-csv {input.chroma} \
             --hue-csv {input.hue} \
+            --element-offsets-csv {input.offsets} \
+            --accent-separation-csv {input.separation} \
             --out {output.json}
         """

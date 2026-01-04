@@ -11,3 +11,4 @@ docs/demo/
 src/assignments_polished.json
 src/vendor/catppuccin/
 src/vendor/codeshot.nvim/
+.DS_Store

@@ -31,6 +31,25 @@ def circular_width_deg(deg, center, q=90):
     return float(np.percentile(dists, q) * 2)
 
 
+def compute_hue_relax_mult(deg, center, q_strict=90, q_relaxed=99):
+    """
+    Compute hue relaxation multiplier from width ratio.
+
+    Returns width_q_relaxed / width_q_strict, clamped to reasonable bounds.
+    This replaces hardcoded 1.3 multiplier.
+    """
+    dists = np.abs((deg - center + 180) % 360 - 180)
+    w_strict = np.percentile(dists, q_strict) * 2
+    w_relaxed = np.percentile(dists, q_relaxed) * 2
+
+    if w_strict < 1e-6:  # avoid division by zero for single-element roles
+        return 1.0
+
+    mult = w_relaxed / w_strict
+    # Clamp to reasonable bounds (1.0 to 2.0)
+    return float(max(1.0, min(2.0, mult)))
+
+
 # ------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------
@@ -59,12 +78,32 @@ def circular_width_deg(deg, center, q=90):
     required=True,
 )
 @click.option(
+    "--element-offsets-csv",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Element L* offsets within roles (compute_element_offsets.py output).",
+)
+@click.option(
+    "--accent-separation-csv",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Accent-to-background separation (compute_accent_separation.py output).",
+)
+@click.option(
     "--out",
     type=click.Path(dir_okay=False, path_type=Path),
     default="palette_constraints.json",
     show_default=True,
 )
-def build_constraints(cap_colors_csv, deltal_csv, chroma_csv, hue_csv, out):
+def build_constraints(
+    cap_colors_csv,
+    deltal_csv,
+    chroma_csv,
+    hue_csv,
+    element_offsets_csv,
+    accent_separation_csv,
+    out,
+):
     """
     Build palette profiles + role constraints from Catppuccin analysis outputs.
     """
@@ -123,10 +162,20 @@ def build_constraints(cap_colors_csv, deltal_csv, chroma_csv, hue_csv, out):
     chroma_constraints = {}
 
     for (palette, role), sub in chroma.groupby(["palette", "role"]):
+        q10 = float(sub["chroma"].quantile(0.10))
+        q25 = float(sub["chroma"].quantile(0.25))
+        q75 = float(sub["chroma"].quantile(0.75))
+        q90 = float(sub["chroma"].quantile(0.90))
+        # Relaxation delta: half of the q10-q90 spread
+        relax_delta = (q90 - q10) / 2
+
         chroma_constraints.setdefault(palette, {})[role] = {
-            "q25": float(sub["chroma"].quantile(0.25)),
+            "q10": q10,
+            "q25": q25,
             "median": float(sub["chroma"].median()),
-            "q75": float(sub["chroma"].quantile(0.75)),
+            "q75": q75,
+            "q90": q90,
+            "relax_delta": relax_delta,
         }
 
     # --------------------------------------------------------
@@ -138,11 +187,47 @@ def build_constraints(cap_colors_csv, deltal_csv, chroma_csv, hue_csv, out):
     for (palette, role), sub in hue.groupby(["palette", "role"]):
         center = circular_mean_deg(sub["hue_deg"].values)
         width = circular_width_deg(sub["hue_deg"].values, center)
+        relax_mult = compute_hue_relax_mult(sub["hue_deg"].values, center)
 
         hue_constraints.setdefault(palette, {})[role] = {
             "center": center,
             "width": width,
+            "relax_mult": relax_mult,
         }
+
+    # --------------------------------------------------------
+    # 6. Element offsets (palette + role + offset_name)
+    # --------------------------------------------------------
+
+    element_offset_constraints = {}
+
+    if element_offsets_csv is not None:
+        offsets_df = pd.read_csv(element_offsets_csv)
+
+        for (palette, offset_name), sub in offsets_df.groupby(
+            ["palette", "offset_name"]
+        ):
+            element_offset_constraints.setdefault(palette, {})[offset_name] = {
+                "value": float(sub["delta_L"].iloc[0]),
+            }
+
+    # --------------------------------------------------------
+    # 7. Accent separation (polarity + role)
+    # --------------------------------------------------------
+
+    accent_sep_constraints = {}
+
+    if accent_separation_csv is not None:
+        sep_df = pd.read_csv(accent_separation_csv)
+
+        # Group by polarity and role to get min threshold
+        for (polarity_val, role), sub in sep_df.groupby(["polarity", "role"]):
+            accent_sep_constraints.setdefault(polarity_val, {})[role] = {
+                "min": float(sub["delta_L"].min()),
+                "q10": float(sub["delta_L"].quantile(0.10)),
+                "q25": float(sub["delta_L"].quantile(0.25)),
+                "median": float(sub["delta_L"].median()),
+            }
 
     # --------------------------------------------------------
     # Final JSON
@@ -155,6 +240,8 @@ def build_constraints(cap_colors_csv, deltal_csv, chroma_csv, hue_csv, out):
             "deltaL": deltaL_constraints,
             "chroma": chroma_constraints,
             "hue": hue_constraints,
+            "element_offsets": element_offset_constraints,
+            "accent_separation": accent_sep_constraints,
         },
     }
 

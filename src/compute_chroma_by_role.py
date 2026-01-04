@@ -64,19 +64,29 @@ def compute_chroma_by_role_palette(lab_csv: Path) -> pd.DataFrame:
 
 def summarize_chroma_by_role_palette(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggregate chroma statistics per (palette, role)
+    Aggregate chroma statistics per (palette, role).
+
+    Includes q10/q90 for computing relaxation bounds:
+      relax_delta = (q90 - q10) / 2
+
+    This replaces hardcoded ±8.0 chroma relaxation.
     """
-    return (
+    agg = (
         df.groupby(["palette", "role"])
         .agg(
             n=("chroma", "size"),
             chroma_mean=("chroma", "mean"),
             chroma_median=("chroma", "median"),
+            chroma_q10=("chroma", lambda x: np.percentile(x, 10)),
             chroma_q25=("chroma", lambda x: np.percentile(x, 25)),
             chroma_q75=("chroma", lambda x: np.percentile(x, 75)),
+            chroma_q90=("chroma", lambda x: np.percentile(x, 90)),
         )
         .reset_index()
     )
+    # Compute relaxation delta from the spread
+    agg["chroma_relax_delta"] = (agg["chroma_q90"] - agg["chroma_q10"]) / 2
+    return agg
 
 
 # ------------------------------------------------------------
