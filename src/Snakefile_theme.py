@@ -121,12 +121,9 @@ rule render_screenshot:
         repo_png = mk_repo_png,
     shell:
         """
-        nvim --headless \
-        -u screenshot_init.lua \
-        +"lua require('savitsky').load('{wildcards.img}')" \
-        +"lua vim.cmd('redraw!')" \
-        +"lua __codeshot_capture('{output}')" \
-        +qa! && cp {output} {params.repo_png}
+        RUST_BACKTRACE=1 neovide --log /tmp/neovide.log -- \
+  -u "/Users/perry/projects/nvim-theme-color-dist/src/screenshot_init.lua" \
+  +'lua run_screenshot([[industry]], [[/Users/perry/projects/nvim-theme-color-dist/src/extract_colors.py]], 82, [[/Users/perry/projects/nvim-theme-color-dist/docs/demo/savitsky/industry.png]])'
         """
 #
 # rule build_docs_index:

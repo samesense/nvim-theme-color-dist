@@ -1,24 +1,34 @@
 ------------------------------------------------------------
--- Deterministic Neovim init for codeshot.nvim (headless)
--- Root is derived from this file's location, not CWD.
+-- /Users/perry/projects/nvim-theme-color-dist/src/screenshot_init.lua
+-- Deterministic Neovide init for fully-automated screenshots (no clicking)
+--
+-- Requirements:
+--   - Neovide installed
+--   - macOS: Screen Recording permission granted to your terminal (and/or Neovide)
+--   - uv env includes: pyobjc-framework-Quartz
+--       uv add pyobjc-framework-Quartz
+--
+-- Helper file (same directory as this init):
+--   /Users/perry/projects/nvim-theme-color-dist/src/get_neovide_cgwindowid.py
+--   (script prints Neovide CGWindowID)
+--
+-- Usage:
+--   neovide -- \
+--     -u "/Users/perry/projects/nvim-theme-color-dist/src/screenshot_init.lua" \
+--     +'lua run_screenshot([[industry]], [[/Users/perry/projects/nvim-theme-color-dist/src/extract_colors.py]], 82, [[/Users/perry/projects/nvim-theme-color-dist/docs/demo/savitsky/industry.png]])'
 ------------------------------------------------------------
 
--- Where is THIS init file?
+-- Root = directory containing this init file (src/)
 local this = debug.getinfo(1, "S").source:sub(2)
-local this_dir = vim.fn.fnamemodify(this, ":p:h")
+local root = vim.fn.fnamemodify(this, ":p:h")
 
--- Repo root: if init is in src/ or scripts/, root is one level up.
--- If you move it later, adjust this.
-local root = vim.fn.fnamemodify(this_dir, ":p:h")
-
--- Put repo root on runtimepath so `lua/savitsky` is discoverable
+-- Make local ./lua/savitsky discoverable
 vim.opt.runtimepath:prepend(root)
 
--- Vendored plugins (relative to repo root)
+-- Vendored catppuccin
 vim.opt.runtimepath:prepend(root .. "/vendor/catppuccin")
-vim.opt.runtimepath:prepend(root .. "/vendor/codeshot.nvim")
 
--- Basic stable options
+-- Stable options (safe in Neovide)
 vim.opt.swapfile = false
 vim.opt.undofile = false
 vim.opt.shada = ""
@@ -30,106 +40,155 @@ vim.opt.signcolumn = "yes"
 vim.opt.wrap = false
 vim.opt.showmode = false
 vim.opt.laststatus = 2
-vim.opt.cmdheight = 0
+vim.opt.cmdheight = 1
 
 local function log(msg)
-	vim.api.nvim_err_writeln("[codeshot-init] " .. msg)
+	vim.api.nvim_err_writeln("[screenshot-init] " .. msg)
 end
 
--- Load dependencies + your plugin
+local function trim(s)
+	return (s or ""):gsub("%s+$", ""):gsub("^%s+", "")
+end
+
+-- Load deps + your local savitsky module
 require("catppuccin")
-log("catppuccin module loaded")
 require("savitsky").setup()
 
-local codeshot = require("codeshot")
--- log("before setup")
--- codeshot.setup({
--- 	silent = true,
--- 	use_current_theme = true,
--- 	show_line_numbers = true,
--- 	shadow = false,
--- 	save_format = "png",
--- 	background = "",
--- })
-log("done")
+-- ------------------------------------------------------------
+-- Filesystem helpers
+-- ------------------------------------------------------------
 
--- ------------------------------------------------------------
--- Load extract_colors.py into the buffer (repo-relative)
--- ------------------------------------------------------------
-local py_path = "extract_colors.py"
-local ok = (vim.fn.filereadable(py_path) == 1)
-if not ok then
-	error("codeshot-init: cannot read file: " .. py_path)
+local function wait_for_file(path, timeout_ms)
+	local uv = vim.loop
+	local start = uv.now()
+	while (uv.now() - start) < timeout_ms do
+		if uv.fs_stat(path) ~= nil then
+			return true
+		end
+		vim.wait(80)
+	end
+	return false
 end
 
-vim.cmd("enew")
--- vim.bo.buftype = "python"
-vim.bo.swapfile = false
+-- ------------------------------------------------------------
+-- macOS capture helpers (NO CLICKING)
+-- ------------------------------------------------------------
+--
+local function activate_neovide()
+	vim.fn.system({
+		"osascript",
+		"-e",
+		[[
+      tell application "Neovide"
+        activate
+      end tell
+      delay 0.2
+      tell application "System Events"
+        tell process "Neovide"
+          if (count of windows) > 0 then
+            set frontmost to true
+            set value of attribute "AXMain" of window 1 to true
+          end if
+        end tell
+      end tell
+    ]],
+	})
+end
 
--- Read file into buffer
-local lines = vim.fn.readfile(py_path)
-vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+local function get_neovide_cgwindowid()
+	-- Use your uv environment so Quartz import works.
+	-- Expects: root/get_neovide_cgwindowid.py
+	local script = root .. "/get_neovide_window_id.py"
+	if vim.fn.filereadable(script) ~= 1 then
+		error("Missing helper script: " .. script)
+	end
 
--- Make sure syntax is Python (for both Neovim + sss_code extension later)
-vim.bo.filetype = "python"
+	local out = vim.fn.system({ "uv", "run", "python", script })
+	out = trim(out)
+	return out:match("(%d+)")
+end
 
--- Select whole buffer for codeshot.selected_lines()
-vim.cmd("normal! ggVG")
-vim.bo.modified = false
+local function screencap_cgwindowid(cg_id, out_path)
+	-- -x: no UI sounds/flash
+	-- -l <CGWindowID>: capture specific window (no interaction)
+	local cmd = string.format([[screencapture -w -x -l %s %q]], cg_id, out_path)
+	local ok = os.execute(cmd)
+	return ok == true or ok == 0
+end
 
-local uv = vim.loop
-log("wtf")
+local function set_filetype_from_ext(file_path)
+	local ext = vim.fn.fnamemodify(file_path, ":e")
+	if ext == "py" then
+		vim.bo.filetype = "python"
+	elseif ext ~= "" then
+		vim.bo.filetype = ext
+	end
+end
 
-_G.__codeshot_capture = function(out_path)
+-- ------------------------------------------------------------
+-- Public entrypoint:
+--   run_screenshot(theme_name, file_path, start_line, out_path)
+-- ------------------------------------------------------------
+
+_G.run_screenshot = function(theme_name, file_path, start_line, out_path)
+	assert(type(theme_name) == "string" and theme_name ~= "", "theme_name must be a non-empty string")
+	assert(type(file_path) == "string" and file_path ~= "", "file_path must be a non-empty string")
+	assert(type(start_line) == "number" and start_line >= 1, "start_line must be a number >= 1")
+	assert(type(out_path) == "string" and out_path ~= "", "out_path must be a non-empty string")
+
 	-- Ensure output directory exists
 	local out_dir = vim.fn.fnamemodify(out_path, ":p:h")
 	vim.fn.mkdir(out_dir, "p")
 
-	-- Verify sss_code exists (required)  [oai_citation:2‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-	if vim.fn.executable("sss_code") ~= 1 then
-		error("codeshot: required binary 'sss_code' not found in PATH")
+	-- Validate input file exists
+	if vim.fn.filereadable(file_path) ~= 1 then
+		error("Cannot read file: " .. file_path)
 	end
 
-	local tmp = vim.fn.tempname() .. ".py"
-	local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-	vim.fn.writefile(buf_lines, tmp)
+	-- Load theme (catppuccin override happens here)
+	require("savitsky").load(theme_name)
 
-	local lines = "82..100"
+	-- Open file
+	vim.cmd("silent! edit " .. vim.fn.fnameescape(file_path))
+	vim.bo.swapfile = false
+	set_filetype_from_ext(file_path)
 
-	-- Configure output image path, then take screenshot of temp file
-	codeshot.setup({
-		bin_path = "sss_code", -- default is sss_code  [oai_citation:5‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-		output = out_path, -- absolute path OK  [oai_citation:6‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-		silent = false, -- show errors while debugging  [oai_citation:7‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-		use_current_theme = true, -- match Neovim theme  [oai_citation:8‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
-		show_line_numbers = true,
-		shadow = false,
-		save_format = "png",
-		background = "",
-	})
-
-	assert(vim.fn.filereadable(tmp) == 1, "temp file not readable: " .. tmp)
-	log("TMP=" .. tmp)
-	log("readable=" .. vim.fn.filereadable(tmp))
-	require("savitsky").load("industry")
+	-- Go to line, center view, redraw
+	vim.cmd(("normal! %dG"):format(start_line))
+	vim.cmd("normal! zz")
 	vim.cmd("redraw!")
-	-- local theme = registry["industry"]
-	-- assert(
-	-- 	vim.g.colors_name == ("catppuccin-" .. theme.flavour),
-	-- 	"colorscheme not active: " .. tostring(vim.g.colors_name)
-	-- )
-	local hl = vim.api.nvim_get_hl(0, { name = "String", link = false })
-	assert(hl.fg ~= nil, "String.fg is nil (theme not applied/resolved)")
-	log(hl.fg)
-	vim.wait(10)
-	codeshot.take(tmp, "py", lines, nil) -- file=tmp, lines="start..end"  [oai_citation:9‡GitHub](https://github.com/SergioRibera/codeshot.nvim)
 
-	-- Wait for async renderer to finish writing output
-	local ok = vim.wait(15000, function()
-		return uv.fs_stat(out_path) ~= nil
-	end, 50)
+	-- Delay to allow Neovide to fully render themed highlights
+	vim.defer_fn(function()
+		activate_neovide()
+		vim.wait(1200)
 
-	if not ok then
-		error("codeshot: timed out waiting for output file: " .. out_path)
-	end
+		local cg_id
+		for _ = 1, 5 do
+			cg_id = get_neovide_cgwindowid()
+			if cg_id then
+				break
+			end
+			vim.wait(400)
+		end
+
+		if not cg_id then
+			error("Could not find Neovide CGWindowID (Quartz). Check Screen Recording permission.")
+		end
+
+		log("Capturing Neovide CGWindowID=" .. cg_id)
+
+		local ok = screencap_cgwindowid(cg_id, out_path)
+		if not ok then
+			error("screencapture failed (check Screen Recording permission for your terminal/Neovide)")
+		end
+
+		if not wait_for_file(out_path, 7000) then
+			error("Timed out waiting for screenshot: " .. out_path)
+		end
+
+		vim.cmd("qa!")
+	end, 900)
 end
+
+log("loaded; call: lua run_screenshot([[theme]], [[file]], line, [[out.png]])")
