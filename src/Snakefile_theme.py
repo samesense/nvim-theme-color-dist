@@ -70,7 +70,7 @@ rule render_screenshot:
         """
         RUST_BACKTRACE=1 neovide --log /tmp/neovide.log -- \
   -u "/Users/perry/projects/nvim-theme-color-dist/src/screenshot_init.lua" \
-  +'lua run_screenshot([[industry]], [[/Users/perry/projects/nvim-theme-color-dist/src/extract_colors.py]], 82, [[/Users/perry/projects/nvim-theme-color-dist/docs/demo/savitsky/industry.png]])'
+  +'lua run_screenshot([[{wildcards.img}]], [[/Users/perry/projects/nvim-theme-color-dist/src/bin/extract_colors.py]], 82, [[/Users/perry/projects/nvim-theme-color-dist/docs/demo/{wildcards.theme_pack}/{wildcards.img}.png]])'
         """
 #
 # rule build_docs_index:

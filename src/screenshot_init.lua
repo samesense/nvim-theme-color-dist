@@ -97,15 +97,31 @@ end
 
 local function get_neovide_cgwindowid()
 	-- Use your uv environment so Quartz import works.
-	-- Expects: root/get_neovide_cgwindowid.py
+	-- Expects: root/get_neovide_window_id.py
 	local script = root .. "/get_neovide_window_id.py"
 	if vim.fn.filereadable(script) ~= 1 then
 		error("Missing helper script: " .. script)
 	end
 
-	local out = vim.fn.system({ "uv", "run", "python", script })
-	out = trim(out)
-	return out:match("(%d+)")
+	-- Run from src/ dir where .venv lives, capture stdout+stderr
+	local out = vim.fn.system({ "uv", "run", "--directory", root, "python", script })
+	local exit_code = vim.v.shell_error
+	-- Log full output for debugging
+	if trim(out) ~= "" then
+		log("get_neovide_window_id.py output: " .. trim(out))
+	end
+	if exit_code ~= 0 then
+		log("get_neovide_window_id.py failed (exit " .. exit_code .. ")")
+		return nil
+	end
+	-- Find a line that is purely digits (the window ID), ignoring uv's extra output
+	for line in out:gmatch("[^\r\n]+") do
+		local id = trim(line):match("^(%d+)$")
+		if id then
+			return id
+		end
+	end
+	return nil
 end
 
 local function screencap_cgwindowid(cg_id, out_path)

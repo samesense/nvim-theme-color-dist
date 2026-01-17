@@ -15,7 +15,7 @@ rule all:
         #END / "figures/hue.png",
         #SRC / "lua/savitsky/registry.lua",
         #expand(END / "savitsky/palettes/{img}.lua", img=IMGS['savitsky']),
-        #expand(DOCS / 'demo/savitsky/{img}.png', img=IMGS['savitsky']),
+        expand(DOCS / 'demo/savitsky/{img}.png', img=IMGS['savitsky']),
         expand(END / "figures/fill/{img}_fill.png", img=IMGS['savitsky']),
 
 onsuccess:

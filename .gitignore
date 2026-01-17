@@ -18,3 +18,4 @@ src/.nextflow/
 src/nextflow/
 src/nextflow
 src/.nextflow.log.*
+src/*log
