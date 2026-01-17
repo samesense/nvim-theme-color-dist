@@ -1,3 +1,4 @@
+#!/usr/local/bin/python
 from __future__ import annotations
 
 import json
@@ -454,8 +455,8 @@ def pick_accents(
 # ============================================================
 
 
-def render(assignments, name):
-    console = Console()
+def _build_table(assignments, name):
+    """Build a Rich Table for the assignments."""
     table = Table(title=name)
 
     table.add_column("Element")
@@ -466,6 +467,16 @@ def render(assignments, name):
     table.add_column("Hue")
     table.add_column("dE_rank", justify="right")
     table.add_column("|dL|_rank", justify="right")
+
+    def fmt_rank(x):
+        if x is None:
+            return ""
+        try:
+            if np.isnan(x):
+                return ""
+        except Exception:
+            pass
+        return f"{float(x):.2f}"
 
     for role in ROLE_ORDER:
         for elem in ELEMENTS_BY_ROLE[role]:
@@ -478,16 +489,6 @@ def render(assignments, name):
             dE_rank = getattr(r, "deltaE_bg_rank", None)
             dL_rank = getattr(r, "abs_deltaL_bg_rank", None)
 
-            def fmt_rank(x):
-                if x is None:
-                    return ""
-                try:
-                    if np.isnan(x):
-                        return ""
-                except Exception:
-                    pass
-                return f"{float(x):.2f}"
-
             table.add_row(
                 elem,
                 h,
@@ -499,7 +500,46 @@ def render(assignments, name):
                 fmt_rank(dL_rank),
             )
 
+    return table
+
+
+def render(assignments, name):
+    """Print table to terminal."""
+    console = Console()
+    table = _build_table(assignments, name)
     console.print(table)
+
+
+def save_table_image(assignments, name, out_path: Path):
+    """
+    Save table as SVG or PNG image.
+
+    - .svg: Native Rich export
+    - .png: Requires cairosvg (pip install cairosvg)
+    """
+    table = _build_table(assignments, name)
+
+    # Record output to SVG
+    console = Console(record=True, width=80, force_terminal=True)
+    console.print(table)
+
+    svg_content = console.export_svg(title=name)
+
+    suffix = out_path.suffix.lower()
+    if suffix == ".svg":
+        out_path.write_text(svg_content)
+    elif suffix == ".png":
+        try:
+            import cairosvg
+        except ImportError:
+            raise click.ClickException(
+                "PNG export requires cairosvg: pip install cairosvg"
+            )
+        cairosvg.svg2png(bytestring=svg_content.encode(), write_to=str(out_path))
+    else:
+        raise click.ClickException(
+            f"Unsupported image format: {suffix} (use .svg or .png)"
+        )
 
 
 def row_to_dict(r):
@@ -521,6 +561,12 @@ def row_to_dict(r):
 @click.option("--constraints-json", required=True, type=click.Path(exists=True))
 @click.option("--theme-name", default="painting")
 @click.option("--out-json", default="assignments.json", show_default=True)
+@click.option(
+    "--out-image",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Save table as image (.svg or .png). PNG requires cairosvg.",
+)
 @click.option(
     "--cool-rank-floor",
     default=0.60,
@@ -545,6 +591,7 @@ def main(
     constraints_json,
     theme_name,
     out_json,
+    out_image,
     cool_rank_floor,
     cool_min_deltal,
     accent_min_deltal,
@@ -564,10 +611,12 @@ def main(
         "deltaL": constraints_all["constraints"]["deltaL"][palette],
         "chroma": constraints_all["constraints"]["chroma"][palette],
         "hue": constraints_all["constraints"]["hue"][palette],
-        "element_offsets": constraints_all["constraints"].get("element_offsets", {}).get(
-            palette, {}
+        "element_offsets": constraints_all["constraints"]
+        .get("element_offsets", {})
+        .get(palette, {}),
+        "accent_separation": constraints_all["constraints"].get(
+            "accent_separation", {}
         ),
-        "accent_separation": constraints_all["constraints"].get("accent_separation", {}),
     }
 
     assignments = pick_structural(pool, constraints)
@@ -602,6 +651,9 @@ def main(
     )
 
     render(assignments, theme_name)
+
+    if out_image is not None:
+        save_table_image(assignments, theme_name, out_image)
 
 
 if __name__ == "__main__":

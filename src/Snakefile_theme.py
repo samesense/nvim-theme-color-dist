@@ -1,56 +1,3 @@
-            # --cool-min-deltae 30 --cool-min-abs-deltal 18 --cool-soft-min-deltal 26
-rule extract_roles:
-    '''get color clusters from png'''
-    input:
-        png = RAW / 'photos/{img}.png', 
-        cons = INT / "constraints/palette_constraints.json",
-    output:
-        colors = INT / "tmp/{img}_colors.csv",
-    shell:
-        """
-        python extract_colors.py {input.png} \
-            --constraints-json {input.cons} \
-            --out-csv {output.colors} \
-            --palette mocha \
-            --cool-min-deltae 24
-        """
-
-rule assign_elements:
-    input:
-        colors = INT / "tmp/{img}_colors.csv",
-        cons = INT / "constraints/palette_constraints.json",
-    output:
-        INT / "assign/{img}.json",
-    params:
-        tname = "{img}_theme",
-    shell:
-        """
-        python assign_elements.py \
-            {input.colors} \
-            --constraints-json {input.cons} \
-            --theme-name {params.tname} \
-            --out-json {output}
-        """
-
-rule fill_elements:
-    input:
-        colors = INT / "tmp/{img}_colors.csv",
-        cons = INT / "constraints/palette_constraints.json",
-        filled = INT / "assign/{img}.json",
-    output:
-        luaout = END / "{img}_theme.lua",
-    params:
-        tname = "{img}_theme",
-    shell:
-        """
-        python fill_gaps.py \
-            --assignments-json {input.filled} \
-            --color-pool-csv {input.colors} \
-            --constraints-json {input.cons} \
-            --out-lua {output} \
-            --theme-name {params.tname}
-        """
-
 def get_repo_pal(wc):
     if wc.theme_pack == 'savitsky':
         return pathlib.Path('/Users/perry/projects/savitsky.nvim/lua/savitsky/palettes/') / f"{wc.img}.lua"
@@ -69,10 +16,10 @@ def mk_repo_png(wc):
 
 rule split_theme_lua:
     """
-    Cp generated theme lua into plugin repo and test palette dirs 
+    Cp generated theme lua into plugin repo and test palette dirs
     """
     input:
-        theme = END / "{img}_theme.lua",
+        lua = END / "{img}_theme.lua",
     output:
         palette = SRC / 'lua/{theme_pack}/palettes/{img}.lua',
     params:
@@ -80,7 +27,7 @@ rule split_theme_lua:
     shell:
         """
         python split_theme.py \
-            --in-lua {input.theme} \
+            --in-lua {input.lua} \
             --out-palette {output.palette} \
             && stylua {output.palette} \
             && cp {output.palette} {params.pub_lua}

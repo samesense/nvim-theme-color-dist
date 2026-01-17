@@ -1,5 +1,6 @@
 include: "Snakefile_const.py"
 include: "Snakefile_trends.py"
+include: "Snakefile_theme_docker.py"
 include: "Snakefile_theme.py"
 
 CATPPUCCIN_DIST = "catppuccin/mocha.csv"

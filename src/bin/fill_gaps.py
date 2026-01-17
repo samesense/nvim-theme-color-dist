@@ -1,3 +1,4 @@
+#!/usr/local/bin/python
 from __future__ import annotations
 
 import json
@@ -105,7 +106,9 @@ class PaletteConstraints:
     deltaL: Dict[str, Dict[str, float]]
     chroma: Dict[str, Dict[str, float]]
     hue: Dict[str, Dict[str, float]]
-    accent_separation: Dict[str, Dict[str, Dict[str, float]]] = None  # polarity -> role -> stats
+    accent_separation: Dict[str, Dict[str, Dict[str, float]]] = (
+        None  # polarity -> role -> stats
+    )
 
     def deltaL_min(self, pair: str) -> float:
         return float(self.deltaL[pair]["q25"])
@@ -141,7 +144,9 @@ class PaletteConstraints:
             return float(x["relax_mult"])
         return fallback
 
-    def accent_min_deltal(self, role: str, polarity: str, fallback: float = 43.0) -> float:
+    def accent_min_deltal(
+        self, role: str, polarity: str, fallback: float = 43.0
+    ) -> float:
         """Get learned minimum L* separation for an accent role."""
         if self.accent_separation is None:
             return fallback
@@ -366,7 +371,11 @@ def pick_best_candidate(
     ):
         # Use learned value if fg_min_deltal not provided
         polarity = "dark" if is_dark else "light"
-        min_deltal = fg_min_deltal if fg_min_deltal is not None else pc.accent_min_deltal(role, polarity)
+        min_deltal = (
+            fg_min_deltal
+            if fg_min_deltal is not None
+            else pc.accent_min_deltal(role, polarity)
+        )
 
         if is_dark:
             strict = sub[sub["L"] >= (base_L + min_deltal)].copy()
@@ -448,8 +457,8 @@ def enforce_structural_L(
 # ============================================================
 
 
-def render_table(assignments: Dict[str, Dict[str, Any]], theme_name: str) -> None:
-    console = Console()
+def _build_table(assignments: Dict[str, Dict[str, Any]], theme_name: str) -> Table:
+    """Build a Rich Table for the assignments."""
     table = Table(title=theme_name)
 
     table.add_column("Element", style="cyan", no_wrap=True)
@@ -478,7 +487,50 @@ def render_table(assignments: Dict[str, Dict[str, Any]], theme_name: str) -> Non
                 "✓" if r.get("derived") else "",
             )
 
+    return table
+
+
+def render_table(assignments: Dict[str, Dict[str, Any]], theme_name: str) -> None:
+    """Print table to terminal."""
+    console = Console()
+    table = _build_table(assignments, theme_name)
     console.print(table)
+
+
+def save_table_image(
+    assignments: Dict[str, Dict[str, Any]],
+    theme_name: str,
+    out_path: Path,
+) -> None:
+    """
+    Save table as SVG or PNG image.
+
+    - .svg: Native Rich export
+    - .png: Requires cairosvg (pip install cairosvg)
+    """
+    table = _build_table(assignments, theme_name)
+
+    # Record output to SVG
+    console = Console(record=True, width=80, force_terminal=True)
+    console.print(table)
+
+    svg_content = console.export_svg(title=theme_name)
+
+    suffix = out_path.suffix.lower()
+    if suffix == ".svg":
+        out_path.write_text(svg_content)
+    elif suffix == ".png":
+        try:
+            import cairosvg
+        except ImportError:
+            raise click.ClickException(
+                "PNG export requires cairosvg: pip install cairosvg"
+            )
+        cairosvg.svg2png(bytestring=svg_content.encode(), write_to=str(out_path))
+    else:
+        raise click.ClickException(
+            f"Unsupported image format: {suffix} (use .svg or .png)"
+        )
 
 
 # ============================================================
@@ -619,7 +671,11 @@ def polish(
             # Foreground-safety also applied to derived colors (important!)
             if base_L is not None and is_dark is not None and role in fg_roles:
                 polarity = "dark" if is_dark else "light"
-                min_deltal = fg_min_deltal if fg_min_deltal is not None else pc.accent_min_deltal(role, polarity)
+                min_deltal = (
+                    fg_min_deltal
+                    if fg_min_deltal is not None
+                    else pc.accent_min_deltal(role, polarity)
+                )
 
                 Lm = float(nudged["L"])
                 if is_dark:
@@ -715,6 +771,12 @@ def polish(
 @click.option(
     "--out-lua", type=click.Path(dir_okay=False, path_type=Path), default=None
 )
+@click.option(
+    "--out-image",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Save table as image (.svg or .png). PNG requires cairosvg.",
+)
 @click.option("--theme-name", default="painting", show_default=True)
 @click.option(
     "--no-render", is_flag=True, default=False, help="Disable rich table output."
@@ -743,6 +805,7 @@ def main(
     constraints_json: Path,
     out_json: Path,
     out_lua: Optional[Path],
+    out_image: Optional[Path],
     theme_name: str,
     no_render: bool,
     fg_min_deltal: Optional[float],
@@ -785,6 +848,9 @@ def main(
 
     if not no_render:
         render_table(out["assigned"], theme_name)
+
+    if out_image is not None:
+        save_table_image(out["assigned"], theme_name, out_image)
 
     if out_lua is not None:
         write_lua(out["assigned"], out_lua, theme_name)
