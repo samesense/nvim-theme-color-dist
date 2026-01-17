@@ -139,14 +139,20 @@ def eligible_roles(row, constraints):
 
     chroma = row.chroma
     hue = row.hue
+    L = row.L
 
     # Core UI roles (lightness-driven via chroma constraints only)
     for role in ["background", "surface", "overlay", "text"]:
         if role not in constraints["chroma"]:
             continue
         c = constraints["chroma"][role]
-        if c["q25"] <= chroma <= c["q75"]:
-            roles.append(role)
+        Lc = constraints.get("lightness", {}).get(role)
+        if Lc is None:
+            if c["q25"] <= chroma <= c["q75"]:
+                roles.append(role)
+        else:
+            if c["q25"] <= chroma <= c["q75"] and Lc["q25"] <= L <= Lc["q75"]:
+                roles.append(role)
 
     # Accent roles (chroma + hue)
     for role in ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]:
@@ -155,8 +161,11 @@ def eligible_roles(row, constraints):
 
         c = constraints["chroma"][role]
         h = constraints["hue"][role]
+        Lc = constraints.get("lightness", {}).get(role)
 
         if chroma < c["q25"]:
+            continue
+        if Lc is not None and not (Lc["q10"] <= L <= Lc["q90"]):
             continue
 
         if circular_distance(hue, h["center"]) <= h["width"] / 2:
@@ -171,6 +180,10 @@ def score_color(row, role, constraints):
     if role in constraints["chroma"]:
         c = constraints["chroma"][role]
         score -= abs(row.chroma - ((c["q25"] + c["q75"]) / 2))
+
+    if role in constraints.get("lightness", {}):
+        Lc = constraints["lightness"][role]
+        score -= abs(row.L - Lc["median"]) * 0.5
 
     if role in constraints["hue"]:
         h = constraints["hue"][role]
@@ -329,6 +342,9 @@ def extract_color_pool(
         "chroma": constraints_all["constraints"]["chroma"][palette],
         "hue": constraints_all["constraints"]["hue"][palette],
         "deltaL": constraints_all["constraints"]["deltaL"][palette],
+        "lightness": constraints_all["constraints"].get("lightness", {}).get(
+            palette, {}
+        ),
     }
 
     # --------------------------------------------------------

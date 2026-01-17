@@ -104,8 +104,11 @@ def delta_e_lab(r1: Dict[str, float], r2: Dict[str, float]) -> float:
 @dataclass(frozen=True)
 class PaletteConstraints:
     deltaL: Dict[str, Dict[str, float]]
+    lightness: Dict[str, Dict[str, float]]
     chroma: Dict[str, Dict[str, float]]
     hue: Dict[str, Dict[str, float]]
+    polarity: Optional[str] = None
+    element_offsets: Dict[str, Dict[str, float]] = None
     accent_separation: Dict[str, Dict[str, Dict[str, float]]] = (
         None  # polarity -> role -> stats
     )
@@ -125,6 +128,20 @@ class PaletteConstraints:
     def chroma_relax_delta(self, role: str, fallback: float = 8.0) -> float:
         """Get learned chroma relaxation delta for a role."""
         x = self.chroma.get(role)
+        if x and "relax_delta" in x:
+            return float(x["relax_delta"])
+        return fallback
+
+    def lightness_q25(self, role: str) -> Optional[float]:
+        x = self.lightness.get(role)
+        return float(x["q25"]) if x and "q25" in x else None
+
+    def lightness_q75(self, role: str) -> Optional[float]:
+        x = self.lightness.get(role)
+        return float(x["q75"]) if x and "q75" in x else None
+
+    def lightness_relax_delta(self, role: str, fallback: float = 10.0) -> float:
+        x = self.lightness.get(role)
         if x and "relax_delta" in x:
             return float(x["relax_delta"])
         return fallback
@@ -214,6 +231,19 @@ def nudge_into_role(
     """
     L0, a0, b0 = float(row["L"]), float(row["a"]), float(row["b"])
     L, C, h = lab_to_lch(L0, a0, b0)
+
+    # lightness band (keep roles in their expected L* range)
+    q25 = pc.lightness_q25(role)
+    q75 = pc.lightness_q75(role)
+    if q25 is not None and q75 is not None:
+        if relax:
+            relax_delta = pc.lightness_relax_delta(role)
+            q25 = max(0.0, q25 - relax_delta)
+            q75 = min(100.0, q75 + relax_delta)
+        if L < q25:
+            L = q25
+        elif L > q75:
+            L = q75
 
     # chroma target band (use learned relax_delta)
     if role in pc.chroma:
@@ -423,30 +453,70 @@ def enforce_structural_L(
         float(text["L"]),
     )
 
-    eps = 1.0
-    Ls = max(Ls, Lb + eps)
-    Lo = max(Lo, Ls + eps)
-    Lt = max(Lt, Lo + eps)
+    is_dark = True
+    if pc.polarity is not None:
+        is_dark = pc.polarity != "light"
+    else:
+        is_dark = Lb < 50.0
 
+    eps = 1.0
     min_bt = pc.deltaL_min(PAIR_BG_TEXT)
     min_bs = pc.deltaL_min(PAIR_BG_SURF)
     min_so = pc.deltaL_min(PAIR_SURF_OVER)
     min_ot = pc.deltaL_min(PAIR_OVER_TEXT)
 
-    if (Lt - Lb) < min_bt:
-        Lt = Lb + min_bt
-    if (Ls - Lb) < min_bs:
-        Ls = Lb + min_bs
-    if (Lo - Ls) < min_so:
-        Lo = Ls + min_so
-    if (Lt - Lo) < min_ot:
-        Lt = Lo + min_ot
+    if is_dark:
+        Ls = max(Ls, Lb + eps)
+        Lo = max(Lo, Ls + eps)
+        Lt = max(Lt, Lo + eps)
+
+        if (Lt - Lb) < min_bt:
+            Lt = Lb + min_bt
+        if (Ls - Lb) < min_bs:
+            Ls = Lb + min_bs
+        if (Lo - Ls) < min_so:
+            Lo = Ls + min_so
+        if (Lt - Lo) < min_ot:
+            Lt = Lo + min_ot
+    else:
+        Ls = min(Ls, Lb - eps)
+        Lo = min(Lo, Ls - eps)
+        Lt = min(Lt, Lo - eps)
+
+        if (Lb - Lt) < min_bt:
+            Lt = Lb - min_bt
+        if (Lb - Ls) < min_bs:
+            Ls = Lb - min_bs
+        if (Ls - Lo) < min_so:
+            Lo = Ls - min_so
+        if (Lo - Lt) < min_ot:
+            Lt = Lo - min_ot
 
     Lb, Ls, Lo, Lt = map(lambda x: clamp(x, 0.0, 100.0), [Lb, Ls, Lo, Lt])
 
     for key, newL in [("base", Lb), ("surface1", Ls), ("overlay1", Lo), ("text", Lt)]:
         r = assign[key]
         r["L"] = float(newL)
+        r["hex"] = lab_to_rgb_hex(float(r["L"]), float(r["a"]), float(r["b"]))
+        _, C, h = lab_to_lch(float(r["L"]), float(r["a"]), float(r["b"]))
+        r["chroma"], r["hue"] = float(C), float(h)
+
+
+def enforce_text_offsets(assign: Dict[str, Dict[str, Any]], pc: PaletteConstraints) -> None:
+    if "text" not in assign:
+        return
+
+    offsets = pc.element_offsets or {}
+    text = assign["text"]
+
+    for elem, fallback in [("subtext1", -7.0), ("subtext0", -15.0)]:
+        if elem not in assign:
+            continue
+        offset = offsets.get(f"{elem}_from_text", {}).get("value", fallback)
+        target = float(text["L"]) + float(offset)
+        target = clamp(target, 0.0, 100.0)
+        r = assign[elem]
+        r["L"] = float(target)
         r["hex"] = lab_to_rgb_hex(float(r["L"]), float(r["a"]), float(r["b"]))
         _, C, h = lab_to_lch(float(r["L"]), float(r["a"]), float(r["b"]))
         r["chroma"], r["hue"] = float(C), float(h)
@@ -724,6 +794,7 @@ def polish(
             break
 
     enforce_structural_L(assignments, pc)
+    enforce_text_offsets(assignments, pc)
 
     if enforce_after_fill:
         enforce_accent_foreground_deltaL(
@@ -827,8 +898,13 @@ def main(
 
     pc = PaletteConstraints(
         deltaL=constraints_all["constraints"]["deltaL"][palette],
+        lightness=constraints_all["constraints"].get("lightness", {}).get(palette, {}),
         chroma=constraints_all["constraints"]["chroma"][palette],
         hue=constraints_all["constraints"]["hue"][palette],
+        polarity=constraints_all.get("polarity", {}).get(palette),
+        element_offsets=constraints_all["constraints"]
+        .get("element_offsets", {})
+        .get(palette, {}),
         accent_separation=constraints_all["constraints"].get("accent_separation", {}),
     )
 

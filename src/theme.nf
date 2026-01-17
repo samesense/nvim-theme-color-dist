@@ -10,7 +10,7 @@ params.raw = "${projectDir}/../data/raw"
 params.interim = "${projectDir}/../data/interim"
 params.end = "${projectDir}/../data/processed"
 params.constraints = "${params.interim}/constraints/palette_constraints.json"
-params.palette = "mocha"
+params.palette = "auto"
 
 process extract_roles {
     /*

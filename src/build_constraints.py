@@ -51,6 +51,41 @@ def compute_hue_relax_mult(deg, center, q_strict=90, q_relaxed=99):
 
 
 # ------------------------------------------------------------
+# Role mapping (Catppuccin semantics)
+# ------------------------------------------------------------
+
+
+ROLE_MAP = {
+    "base": "background",
+    "mantle": "background",
+    "crust": "background",
+    "surface0": "surface",
+    "surface1": "surface",
+    "surface2": "surface",
+    "overlay0": "overlay",
+    "overlay1": "overlay",
+    "overlay2": "overlay",
+    "text": "text",
+    "subtext0": "text",
+    "subtext1": "text",
+    "rosewater": "accent_red",
+    "flamingo": "accent_red",
+    "pink": "accent_red",
+    "red": "accent_red",
+    "maroon": "accent_red",
+    "peach": "accent_warm",
+    "yellow": "accent_warm",
+    "green": "accent_warm",
+    "teal": "accent_cool",
+    "sky": "accent_cool",
+    "sapphire": "accent_cool",
+    "blue": "accent_cool",
+    "lavender": "accent_cool",
+    "mauve": "accent_bridge",
+}
+
+
+# ------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------
 
@@ -156,7 +191,32 @@ def build_constraints(
         }
 
     # --------------------------------------------------------
-    # 4. Chroma constraints (palette + role)
+    # 4. Lightness constraints (palette + role)
+    # --------------------------------------------------------
+
+    cap_role = cap.copy()
+    cap_role["role"] = cap_role["element"].map(ROLE_MAP)
+    cap_role = cap_role.dropna(subset=["role"])
+
+    lightness_constraints = {}
+    for (palette, role), sub in cap_role.groupby(["palette", "role"]):
+        q10 = float(sub["L"].quantile(0.10))
+        q25 = float(sub["L"].quantile(0.25))
+        q75 = float(sub["L"].quantile(0.75))
+        q90 = float(sub["L"].quantile(0.90))
+        relax_delta = (q90 - q10) / 2
+
+        lightness_constraints.setdefault(palette, {})[role] = {
+            "q10": q10,
+            "q25": q25,
+            "median": float(sub["L"].median()),
+            "q75": q75,
+            "q90": q90,
+            "relax_delta": relax_delta,
+        }
+
+    # --------------------------------------------------------
+    # 5. Chroma constraints (palette + role)
     # --------------------------------------------------------
 
     chroma_constraints = {}
@@ -179,7 +239,7 @@ def build_constraints(
         }
 
     # --------------------------------------------------------
-    # 5. Hue constraints (palette + role, circular)
+    # 6. Hue constraints (palette + role, circular)
     # --------------------------------------------------------
 
     hue_constraints = {}
@@ -196,7 +256,7 @@ def build_constraints(
         }
 
     # --------------------------------------------------------
-    # 6. Element offsets (palette + role + offset_name)
+    # 7. Element offsets (palette + role + offset_name)
     # --------------------------------------------------------
 
     element_offset_constraints = {}
@@ -212,7 +272,7 @@ def build_constraints(
             }
 
     # --------------------------------------------------------
-    # 7. Accent separation (polarity + role)
+    # 8. Accent separation (polarity + role)
     # --------------------------------------------------------
 
     accent_sep_constraints = {}
@@ -238,6 +298,7 @@ def build_constraints(
         "polarity": polarity,
         "constraints": {
             "deltaL": deltaL_constraints,
+            "lightness": lightness_constraints,
             "chroma": chroma_constraints,
             "hue": hue_constraints,
             "element_offsets": element_offset_constraints,

@@ -145,44 +145,48 @@ def hue_width(constraints, role):
 
 
 def pick_structural(pool: pd.DataFrame, constraints: dict):
-    bg_pool = pool[pool.role == "background"].sort_values("L")
-    surf_pool = pool[pool.role == "surface"].sort_values("L")
-    over_pool = pool[pool.role == "overlay"].sort_values("L")
-    text_pool = pool[pool.role == "text"].sort_values("L", ascending=False)
+    polarity = constraints.get("polarity", "dark")
+    is_dark = polarity != "light"
+
+    bg_pool = pool[pool.role == "background"].sort_values("L", ascending=is_dark)
+    surf_pool = pool[pool.role == "surface"].sort_values("L", ascending=is_dark)
+    over_pool = pool[pool.role == "overlay"].sort_values("L", ascending=is_dark)
+    text_pool = pool[pool.role == "text"].sort_values("L", ascending=not is_dark)
 
     best = None
     best_score = float("inf")
 
     for bg in bg_pool.head(40).itertuples():
         for text in text_pool.head(40).itertuples():
-            if text.L - bg.L < deltaL_min(constraints, "background→text"):
+            bt = (text.L - bg.L) if is_dark else (bg.L - text.L)
+            if bt < deltaL_min(constraints, "background→text"):
                 continue
 
             for surf in surf_pool.itertuples():
-                if not (bg.L < surf.L < text.L):
-                    continue
-
-                for over in over_pool.itertuples():
-                    if not (surf.L < over.L < text.L):
+                if is_dark:
+                    if not (bg.L < surf.L < text.L):
+                        continue
+                else:
+                    if not (bg.L > surf.L > text.L):
                         continue
 
+                for over in over_pool.itertuples():
+                    if is_dark:
+                        if not (surf.L < over.L < text.L):
+                            continue
+                    else:
+                        if not (surf.L > over.L > text.L):
+                            continue
+
+                    bs = (surf.L - bg.L) if is_dark else (bg.L - surf.L)
+                    so = (over.L - surf.L) if is_dark else (surf.L - over.L)
+                    ot = (text.L - over.L) if is_dark else (over.L - text.L)
+
                     score = (
-                        abs(
-                            (text.L - bg.L)
-                            - deltaL_target(constraints, "background→text")
-                        )
-                        + abs(
-                            (surf.L - bg.L)
-                            - deltaL_target(constraints, "background→surface")
-                        )
-                        + abs(
-                            (over.L - surf.L)
-                            - deltaL_target(constraints, "surface→overlay")
-                        )
-                        + abs(
-                            (text.L - over.L)
-                            - deltaL_target(constraints, "overlay→text")
-                        )
+                        abs(bt - deltaL_target(constraints, "background→text"))
+                        + abs(bs - deltaL_target(constraints, "background→surface"))
+                        + abs(so - deltaL_target(constraints, "surface→overlay"))
+                        + abs(ot - deltaL_target(constraints, "overlay→text"))
                         - 2.0
                         * (
                             float(getattr(bg, "frequency", 0.0))
@@ -611,6 +615,7 @@ def main(
         "deltaL": constraints_all["constraints"]["deltaL"][palette],
         "chroma": constraints_all["constraints"]["chroma"][palette],
         "hue": constraints_all["constraints"]["hue"][palette],
+        "polarity": constraints_all.get("polarity", {}).get(palette, "dark"),
         "element_offsets": constraints_all["constraints"]
         .get("element_offsets", {})
         .get(palette, {}),
