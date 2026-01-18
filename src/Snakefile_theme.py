@@ -14,6 +14,11 @@ def mk_repo_png(wc):
     if wc.theme_pack == 'savitsky':
         return pathlib.Path('/Users/perry/projects/savitsky.nvim/docs/demo/') / f'{wc.img}.png'
 
+def mk_repo_json(wc):
+    if wc.theme_pack == 'savitsky':
+        # /Users/perry/projects/savitsky.nvim/docs/themes.json
+        return pathlib.Path('/Users/perry/projects/savitsky.nvim/docs/themes.json')
+
 rule split_theme_lua:
     """
     Cp generated theme lua into plugin repo and test palette dirs
@@ -70,8 +75,18 @@ rule render_screenshot:
         """
         RUST_BACKTRACE=1 neovide --log /tmp/neovide.log -- \
   -u "/Users/perry/projects/nvim-theme-color-dist/src/screenshot_init.lua" \
-  +'lua run_screenshot([[{wildcards.img}]], [[/Users/perry/projects/nvim-theme-color-dist/src/bin/extract_colors.py]], 82, [[/Users/perry/projects/nvim-theme-color-dist/docs/demo/{wildcards.theme_pack}/{wildcards.img}.png]])'
++'lua run_screenshot([[{wildcards.img}]], [[/Users/perry/projects/nvim-theme-color-dist/src/bin/extract_colors.py]], 82, [[/Users/perry/projects/nvim-theme-color-dist/docs/demo/{wildcards.theme_pack}/{wildcards.img}.png]])' && cp /Users/perry/projects/nvim-theme-color-dist/docs/demo/{wildcards.theme_pack}/{wildcards.img}.png {params.repo_png}
         """
+
+rule gh_pages_theme_json:
+    input:
+        palettes = mk_palette_reg, 
+    output:
+        DOCS / "{theme_pack}_themes.json",
+    params:
+        site_json = mk_repo_json,
+    shell:
+        'python mk_theme_json.py {SRC}/lua/{wildcards.theme_pack}/palettes --out {output} && cp {output} {params.site_json}'
 #
 # rule build_docs_index:
 #     """

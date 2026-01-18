@@ -4,12 +4,6 @@ from pathlib import Path
 
 import click
 
-# ------------------------------------------------------------
-# Lua parsing
-# ------------------------------------------------------------
-
-LUA_KV_RE = re.compile(r"(\w+)\s*=\s*'(#?[0-9a-fA-F]{6})'")
-
 
 def parse_lua_theme(path: Path) -> dict[str, str]:
     """
@@ -17,12 +11,14 @@ def parse_lua_theme(path: Path) -> dict[str, str]:
     { element: "#rrggbb" }
     """
     colors = {}
-    text = path.read_text()
-
-    for key, val in LUA_KV_RE.findall(text):
-        if not val.startswith("#"):
-            val = f"#{val}"
-        colors[key] = val.lower()
+    with open(path) as f:
+        f.readline()
+        for line in f:
+            if line.strip() == "}":
+                continue
+            role, color_quote = line.lstrip().split(",")[0].split(" = ")
+            color = color_quote.strip().strip('"').strip("'")
+            colors[role] = color
 
     return colors
 
@@ -74,11 +70,6 @@ def normalize_theme(colors: dict[str, str]) -> dict:
     }
 
 
-# ------------------------------------------------------------
-# CLI
-# ------------------------------------------------------------
-
-
 @click.command()
 @click.argument(
     "theme_dir",
@@ -108,7 +99,6 @@ def export_themes(theme_dir: Path, out: Path):
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(data, indent=2))
-    click.echo(f"✓ Wrote {out} ({len(data)} themes)")
 
 
 if __name__ == "__main__":
