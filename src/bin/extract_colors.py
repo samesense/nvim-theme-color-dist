@@ -260,6 +260,13 @@ def infer_palette(photo_stats, palette_profiles):
 
 
 def palette_fit_score(df: pd.DataFrame, constraints_all: dict) -> dict[str, float]:
+    # Midtone hue for palette fit (muted field color)
+    L_q30 = df["L"].quantile(0.30)
+    L_q85 = df["L"].quantile(0.85)
+    C_q60 = df["chroma"].quantile(0.60)
+    bg_mask = (df["L"] >= L_q30) & (df["L"] <= L_q85) & (df["chroma"] <= C_q60)
+    mid_hue, mid_conf = dominant_hue_band(df, mask=bg_mask, weight_chroma=False)
+
     scores = {}
     palettes = constraints_all["constraints"]["chroma"].keys()
     for palette in palettes:
@@ -313,6 +320,17 @@ def palette_fit_score(df: pd.DataFrame, constraints_all: dict) -> dict[str, floa
 
         if delta_possible is None or delta_possible < min_bt:
             coverage -= 15.0
+
+        if mid_hue is not None and mid_conf > 0.05:
+            bg_hue = (
+                constraints_all["constraints"]
+                .get("background_hue", {})
+                .get(palette, {})
+            )
+            center = float(bg_hue.get("center", mid_hue))
+            width = float(bg_hue.get("width", 60.0))
+            dist = circular_distance(mid_hue, center)
+            coverage -= (dist / max(20.0, width)) * 5.0
 
         scores[palette] = float(coverage)
 
@@ -670,6 +688,8 @@ def extract_color_pool(
     C_q60 = df["chroma"].quantile(0.60)
     bg_mask = (df["L"] >= L_q30) & (df["L"] <= L_q85) & (df["chroma"] <= C_q60)
     bg_hue, bg_hue_conf = dominant_hue_band(df, mask=bg_mask, weight_chroma=False)
+    L_q40 = df["L"].quantile(0.40)
+    C_median = df["chroma"].median()
 
     # Warm accent hue from high-chroma warm range
     C_q75 = df["chroma"].quantile(0.75)
@@ -880,6 +900,9 @@ def extract_color_pool(
     pool["photo_dark_cluster_score"] = dark_cluster_score
     pool["photo_bg_hue"] = bg_hue
     pool["photo_bg_hue_conf"] = bg_hue_conf
+    pool["photo_L_q30"] = float(L_q30)
+    pool["photo_L_q40"] = float(L_q40)
+    pool["photo_C_median"] = float(C_median)
     pool["photo_warm_hue"] = warm_hue
     pool["photo_warm_hue_conf"] = warm_hue_conf
 

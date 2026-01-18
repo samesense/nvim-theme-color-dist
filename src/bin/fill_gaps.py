@@ -109,6 +109,7 @@ class PaletteConstraints:
     hue: Dict[str, Dict[str, float]]
     polarity: Optional[str] = None
     element_offsets: Dict[str, Dict[str, float]] = None
+    text_contrast: Dict[str, Dict[str, float]] = None
     accent_separation: Dict[str, Dict[str, Dict[str, float]]] = (
         None  # polarity -> role -> stats
     )
@@ -170,6 +171,12 @@ class PaletteConstraints:
         pol_sep = self.accent_separation.get(polarity, {})
         role_sep = pol_sep.get(role, {})
         return abs(role_sep.get("min", fallback))
+
+    def text_contrast_min(self, element: str, fallback: float = 35.0) -> float:
+        if self.text_contrast is None:
+            return fallback
+        x = self.text_contrast.get(element, {})
+        return float(x.get("q25", fallback))
 
 
 # ============================================================
@@ -522,6 +529,34 @@ def enforce_text_offsets(assign: Dict[str, Dict[str, Any]], pc: PaletteConstrain
         r["chroma"], r["hue"] = float(C), float(h)
 
 
+def enforce_text_contrast(assign: Dict[str, Dict[str, Any]], pc: PaletteConstraints) -> None:
+    if "base" not in assign:
+        return
+    base_L = float(assign["base"]["L"])
+    is_dark = True
+    if pc.polarity is not None:
+        is_dark = pc.polarity != "light"
+
+    for elem in ["text", "subtext1", "subtext0"]:
+        if elem not in assign:
+            continue
+        min_dl = pc.text_contrast_min(elem)
+        r = assign[elem]
+        L = float(r["L"])
+        if is_dark:
+            target = base_L + min_dl
+            if L < target:
+                r["L"] = clamp(target, 0.0, 100.0)
+        else:
+            target = base_L - min_dl
+            if L > target:
+                r["L"] = clamp(target, 0.0, 100.0)
+
+        r["hex"] = lab_to_rgb_hex(float(r["L"]), float(r["a"]), float(r["b"]))
+        _, C, h = lab_to_lch(float(r["L"]), float(r["a"]), float(r["b"]))
+        r["chroma"], r["hue"] = float(C), float(h)
+
+
 # ============================================================
 # Rendering
 # ============================================================
@@ -795,6 +830,7 @@ def polish(
 
     enforce_structural_L(assignments, pc)
     enforce_text_offsets(assignments, pc)
+    enforce_text_contrast(assignments, pc)
 
     if enforce_after_fill:
         enforce_accent_foreground_deltaL(
@@ -904,6 +940,9 @@ def main(
         polarity=constraints_all.get("polarity", {}).get(palette),
         element_offsets=constraints_all["constraints"]
         .get("element_offsets", {})
+        .get(palette, {}),
+        text_contrast=constraints_all["constraints"]
+        .get("text_contrast", {})
         .get(palette, {}),
         accent_separation=constraints_all["constraints"].get("accent_separation", {}),
     )

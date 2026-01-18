@@ -69,6 +69,11 @@ def circ_dist(a, b) -> float:
     return min(d, 360 - d)
 
 
+def deltaE76(lab1: np.ndarray, lab2: np.ndarray) -> float:
+    d = lab1 - lab2
+    return float(np.sqrt(np.dot(d, d)))
+
+
 def circ_dist_series(series, center: float) -> pd.Series:
     d = (series - center).abs() % 360
     return np.minimum(d, 360 - d)
@@ -232,8 +237,13 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
     cluster_score = float(constraints.get("photo_dark_cluster_score") or 0.0)
     bg_photo_hue = constraints.get("photo_bg_hue")
     bg_photo_conf = float(constraints.get("photo_bg_hue_conf") or 0.0)
+    photo_L_q30 = constraints.get("photo_L_q30")
+    photo_L_q40 = constraints.get("photo_L_q40")
+    photo_C_median = constraints.get("photo_C_median")
     bg_hue = constraints.get("background_hue", {})
     bg_width = float(bg_hue.get("width", 60.0))
+    ui_hue = constraints.get("ui_hue_coherence", {})
+    ui_hue_max = float(ui_hue.get("max_dist", 90.0))
 
     desired_hue = None
     hue_weight = 0.0
@@ -250,6 +260,11 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
             hue_weight = max(hue_weight, 0.15)
 
     hue_weight *= min(1.0, max(0.3, bg_width / 90.0))
+
+    min_bg_L = None
+    if photo_L_q30 is not None and photo_L_q40 is not None:
+        if (photo_L_q30 > 28.0) or (photo_L_q40 > 32.0):
+            min_bg_L = max(0.0, float(photo_L_q30) - 5.0)
 
     for relax in [False, True]:
         bg_pool = get_role_pool(pool, "background", constraints, relax=relax).sort_values(
@@ -312,6 +327,28 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
                         )
                         if desired_hue is not None and hue_weight > 0.0:
                             score += circ_dist(float(bg.hue), desired_hue) * hue_weight
+                        if bg_photo_hue is not None and bg_photo_conf > 0.05:
+                            coherence = (
+                                circ_dist(float(bg.hue), float(bg_photo_hue))
+                                + circ_dist(float(surf.hue), float(bg_photo_hue))
+                                + circ_dist(float(over.hue), float(bg_photo_hue))
+                            ) / 3.0
+                            score += coherence * 0.06
+                        ui_dist = max(
+                            circ_dist(float(bg.hue), float(surf.hue)),
+                            circ_dist(float(bg.hue), float(over.hue)),
+                            circ_dist(float(bg.hue), float(text.hue)),
+                            circ_dist(float(surf.hue), float(over.hue)),
+                            circ_dist(float(surf.hue), float(text.hue)),
+                            circ_dist(float(over.hue), float(text.hue)),
+                        )
+                        if ui_dist > ui_hue_max:
+                            score += (ui_dist - ui_hue_max) * 0.15
+                        if min_bg_L is not None and float(bg.L) < min_bg_L:
+                            score += (min_bg_L - float(bg.L)) * 1.2
+                        if photo_C_median is not None and float(photo_C_median) > 18.0:
+                            if float(bg.chroma) < 6.0:
+                                score += (6.0 - float(bg.chroma)) * 1.5
 
                         if score < best_score:
                             best_score = score
@@ -461,6 +498,13 @@ def pick_accents(
     polarity = "dark" if is_dark else "light"
     warm_hue = constraints.get("photo_warm_hue")
     warm_hue_conf = float(constraints.get("photo_warm_hue_conf") or 0.0)
+    text = assignments.get("text")
+    text_lab = (
+        np.array([float(text.L), float(text.a), float(text.b)], dtype=float)
+        if text is not None
+        else None
+    )
+    accent_text_sep = constraints.get("accent_text_separation", {})
 
     for role in ACCENT_ROLES:
         elems = ELEMENTS_BY_ROLE[role]
@@ -504,6 +548,26 @@ def pick_accents(
                 floored = cand[cand["L"] <= (base_L - abs(min_deltal))].copy()
             if not floored.empty:
                 cand = floored
+
+        # Accent-text separation (avoid accents too close to text)
+        if text_lab is not None and "L" in cand.columns:
+            sep = accent_text_sep.get(role, {})
+            min_de = float(sep.get("deltaE_q10", 0.0))
+            min_dl = float(sep.get("deltaL_q10", 0.0))
+            if min_de > 0.0 or min_dl > 0.0:
+                cand["deltaE_text"] = cand.apply(
+                    lambda r: deltaE76(
+                        np.array([r.L, r.a, r.b], dtype=float), text_lab
+                    ),
+                    axis=1,
+                )
+                cand["abs_deltaL_text"] = (cand["L"] - float(text.L)).abs()
+                gated = cand[
+                    (cand["deltaE_text"] >= min_de)
+                    & (cand["abs_deltaL_text"] >= min_dl)
+                ]
+                if not gated.empty:
+                    cand = gated
 
         # Rank-aware preference (if present)
         have_ranks = (
@@ -764,12 +828,18 @@ def main(
         "background_hue": constraints_all["constraints"]
         .get("background_hue", {})
         .get(palette, {}),
+        "ui_hue_coherence": constraints_all["constraints"]
+        .get("ui_hue_coherence", {})
+        .get(palette, {}),
         "element_offsets": constraints_all["constraints"]
         .get("element_offsets", {})
         .get(palette, {}),
         "accent_separation": constraints_all["constraints"].get(
             "accent_separation", {}
         ),
+        "accent_text_separation": constraints_all["constraints"].get(
+            "accent_text_separation", {}
+        ).get(palette, {}),
     }
 
     if "photo_dark_hue" in pool.columns:
@@ -788,6 +858,15 @@ def main(
         )
         constraints["photo_bg_hue_conf"] = (
             pool.get("photo_bg_hue_conf", pd.Series([0.0])).dropna().iloc[0]
+        )
+        constraints["photo_L_q30"] = (
+            pool.get("photo_L_q30", pd.Series([np.nan])).dropna().iloc[0]
+        )
+        constraints["photo_L_q40"] = (
+            pool.get("photo_L_q40", pd.Series([np.nan])).dropna().iloc[0]
+        )
+        constraints["photo_C_median"] = (
+            pool.get("photo_C_median", pd.Series([np.nan])).dropna().iloc[0]
         )
         constraints["photo_warm_hue"] = (
             pool.get("photo_warm_hue", pd.Series([np.nan])).dropna().iloc[0]

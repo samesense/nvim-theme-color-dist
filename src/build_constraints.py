@@ -125,6 +125,24 @@ ROLE_MAP = {
     help="Accent-to-background separation (compute_accent_separation.py output).",
 )
 @click.option(
+    "--text-contrast-csv",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Base-to-text/subtext contrast bands.",
+)
+@click.option(
+    "--accent-text-sep-csv",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Accent-to-text separation (L* and dE).",
+)
+@click.option(
+    "--ui-hue-coherence-csv",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="UI hue coherence (background/surface/overlay/text).",
+)
+@click.option(
     "--out",
     type=click.Path(dir_okay=False, path_type=Path),
     default="palette_constraints.json",
@@ -137,6 +155,9 @@ def build_constraints(
     hue_csv,
     element_offsets_csv,
     accent_separation_csv,
+    text_contrast_csv,
+    accent_text_sep_csv,
+    ui_hue_coherence_csv,
     out,
 ):
     """
@@ -305,6 +326,48 @@ def build_constraints(
             }
 
     # --------------------------------------------------------
+    # 10. Text contrast bands (palette + element)
+    # --------------------------------------------------------
+
+    text_contrast_constraints = {}
+    if text_contrast_csv is not None:
+        tc_df = pd.read_csv(text_contrast_csv)
+        for (palette, element), sub in tc_df.groupby(["palette", "element"]):
+            text_contrast_constraints.setdefault(palette, {})[element] = {
+                "q25": float(sub["abs_delta_L"].quantile(0.25)),
+                "median": float(sub["abs_delta_L"].median()),
+                "q75": float(sub["abs_delta_L"].quantile(0.75)),
+            }
+
+    # --------------------------------------------------------
+    # 11. Accent-text separation (palette + role)
+    # --------------------------------------------------------
+
+    accent_text_constraints = {}
+    if accent_text_sep_csv is not None:
+        at_df = pd.read_csv(accent_text_sep_csv)
+        for (palette, role), sub in at_df.groupby(["palette", "role"]):
+            accent_text_constraints.setdefault(palette, {})[role] = {
+                "deltaE_q10": float(sub["delta_E"].quantile(0.10)),
+                "deltaE_q25": float(sub["delta_E"].quantile(0.25)),
+                "deltaL_q10": float(sub["abs_delta_L"].quantile(0.10)),
+                "deltaL_q25": float(sub["abs_delta_L"].quantile(0.25)),
+            }
+
+    # --------------------------------------------------------
+    # 12. UI hue coherence (palette)
+    # --------------------------------------------------------
+
+    ui_hue_constraints = {}
+    if ui_hue_coherence_csv is not None:
+        uh_df = pd.read_csv(ui_hue_coherence_csv)
+        for _, row in uh_df.iterrows():
+            ui_hue_constraints[str(row["palette"])] = {
+                "max_dist": float(row["max_dist"]),
+                "mean_dist": float(row["mean_dist"]),
+            }
+
+    # --------------------------------------------------------
     # Final JSON
     # --------------------------------------------------------
 
@@ -319,6 +382,9 @@ def build_constraints(
             "hue": hue_constraints,
             "element_offsets": element_offset_constraints,
             "accent_separation": accent_sep_constraints,
+            "text_contrast": text_contrast_constraints,
+            "accent_text_separation": accent_text_constraints,
+            "ui_hue_coherence": ui_hue_constraints,
         },
     }
 

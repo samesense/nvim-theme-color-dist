@@ -70,6 +70,51 @@ rule hue_trend_data:
             {input} {output}
         """
 
+rule text_contrast_bands:
+    """
+    Compute base-to-text/subtext contrast bands.
+    """
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        csv = INT / "constraints/text_contrast.csv",
+    shell:
+        """
+        python compute_text_contrast_bands.py \
+            --colors-csv {input} \
+            --out {output.csv}
+        """
+
+rule accent_text_separation:
+    """
+    Compute accent-to-text separation (L* and dE).
+    """
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        csv = INT / "constraints/accent_text_separation.csv",
+    shell:
+        """
+        python compute_accent_text_separation.py \
+            --colors-csv {input} \
+            --out {output.csv}
+        """
+
+rule ui_hue_coherence:
+    """
+    Compute background/surface/overlay/text hue coherence.
+    """
+    input:
+        INT / 'cap_colors.csv',
+    output:
+        csv = INT / "constraints/ui_hue_coherence.csv",
+    shell:
+        """
+        python compute_ui_hue_coherence.py \
+            --colors-csv {input} \
+            --out {output.csv}
+        """
+
 rule element_offsets:
     """
     Compute L* offsets between element variants within each role.
@@ -123,6 +168,9 @@ rule build_palette_constraints:
         deltaL = INT / "constraints/deltaL_margins.csv",
         chroma = INT / "constraints/chroma_role.csv",
         hue    = INT / "constraints/hue.csv",
+        text_contrast = INT / "constraints/text_contrast.csv",
+        accent_text = INT / "constraints/accent_text_separation.csv",
+        ui_hue = INT / "constraints/ui_hue_coherence.csv",
         offsets = INT / "constraints/element_offsets.csv",
         separation = INT / "constraints/accent_separation.csv",
     output:
@@ -134,6 +182,9 @@ rule build_palette_constraints:
             --deltal-csv {input.deltaL} \
             --chroma-csv {input.chroma} \
             --hue-csv {input.hue} \
+            --text-contrast-csv {input.text_contrast} \
+            --accent-text-sep-csv {input.accent_text} \
+            --ui-hue-coherence-csv {input.ui_hue} \
             --element-offsets-csv {input.offsets} \
             --accent-separation-csv {input.separation} \
             --out {output.json}
