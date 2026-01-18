@@ -1,0 +1,3 @@
+[submodule "src/vendor/savitsky.nvim"]
+	path = src/vendor/savitsky.nvim
+	url = https://github.com/samesense/savitsky.nvim.git

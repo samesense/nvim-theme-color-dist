@@ -1,0 +1,9 @@
+palette=macchiato
+background: chroma_q25=7.04 q75=18.91 light_q25=10.99 light_q75=31.76 c_pass=680 l_pass=666 both_pass=239
+surface: chroma_q25=10.98 q75=23.94 light_q25=26.58 light_q75=39.22 c_pass=680 l_pass=566 both_pass=164
+overlay: chroma_q25=14.76 q75=30.32 light_q25=39.22 light_q75=60.28 c_pass=680 l_pass=892 both_pass=203
+text: chroma_q25=16.91 q75=46.71 light_q25=46.47 light_q75=81.45 c_pass=1018 l_pass=769 both_pass=294
+accent_red: chroma_q25=15.90 light_q10=69.36 light_q90=86.94 h_center=12.5 h_width=90.0 c_pass=1523 l_pass=83 h_pass=584 both_pass=0
+accent_warm: chroma_q25=34.97 light_q10=76.93 light_q90=85.13 h_center=92.0 h_width=90.0 c_pass=769 l_pass=37 h_pass=1433 both_pass=0
+accent_cool: chroma_q25=25.47 light_q10=72.74 light_q90=81.31 h_center=241.5 h_width=107.2 c_pass=1070 l_pass=43 h_pass=314 both_pass=0
+accent_bridge: chroma_q25=46.71 light_q10=72.10 light_q90=72.10 h_center=308.9 h_width=0.0 c_pass=454 l_pass=0 h_pass=0 both_pass=0

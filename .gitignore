@@ -7,3 +7,15 @@ src/.snakemake/
 src/__pycache__/
 src/*png
 src/*csv
+docs/demo/
+src/assignments_polished.json
+src/vendor/catppuccin/
+src/vendor/codeshot.nvim/
+.DS_Store
+src/.nextflow.log
+src/work/
+src/.nextflow/
+src/nextflow/
+src/nextflow
+src/.nextflow.log.*
+src/*log

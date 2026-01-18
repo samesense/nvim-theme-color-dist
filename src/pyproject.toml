@@ -5,11 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "cairocffi>=1.7.1",
+    "cairosvg>=2.8.2",
     "click>=8.1.8",
     "colour-science>=0.4.4",
     "matplotlib>=3.9.4",
     "numpy>=1.26.4",
     "pandas>=2.3.3",
+    "pycairo>=1.28.0",
+    "pyobjc-framework-quartz>=11.1",
     "rich>=14.2.0",
     "scikit-image>=0.24.0",
     "scipy>=1.13.1",
