@@ -267,32 +267,69 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
             min_bg_L = max(0.0, float(photo_L_q30) - 5.0)
 
     for relax in [False, True]:
-        bg_pool = get_role_pool(pool, "background", constraints, relax=relax).sort_values(
-            "L", ascending=is_dark
-        )
-        surf_pool = get_role_pool(pool, "surface", constraints, relax=relax).sort_values(
-            "L", ascending=is_dark
-        )
-        over_pool = get_role_pool(pool, "overlay", constraints, relax=relax).sort_values(
-            "L", ascending=is_dark
-        )
-        text_pool = get_role_pool(pool, "text", constraints, relax=relax).sort_values(
-            "L", ascending=not is_dark
-        )
+        bg_pool = get_role_pool(pool, "background", constraints, relax=relax)
+        surf_pool = get_role_pool(pool, "surface", constraints, relax=relax)
+        over_pool = get_role_pool(pool, "overlay", constraints, relax=relax)
+        text_pool = get_role_pool(pool, "text", constraints, relax=relax)
 
-        best = None
-        best_score = float("inf")
+        def top_k(df, k):
+            if df.empty:
+                return df
+            return df.sort_values(["score", "frequency"], ascending=[False, False]).head(
+                k
+            )
+
+        k_bg = 24 if relax else 16
+        k_text = 24 if relax else 16
+        k_surf = 32 if relax else 20
+        k_over = 32 if relax else 20
+
+        bg_pool = top_k(bg_pool, k_bg)
+        text_pool = top_k(text_pool, k_text)
+        surf_pool = top_k(surf_pool, k_surf)
+        over_pool = top_k(over_pool, k_over)
+
+        if bg_pool.empty or text_pool.empty or surf_pool.empty or over_pool.empty:
+            continue
+
+        bg_rows = list(bg_pool.itertuples())
+        text_rows = list(text_pool.itertuples())
+        surf_rows = list(surf_pool.itertuples())
+        over_rows = list(over_pool.itertuples())
+
+        bg_L = np.array([r.L for r in bg_rows], dtype=float)
+        text_L = np.array([r.L for r in text_rows], dtype=float)
 
         min_mult = 0.6 if relax else 1.0
         min_bt = deltaL_min(constraints, "background→text") * min_mult
 
-        for bg in bg_pool.head(40).itertuples():
-            for text in text_pool.head(40).itertuples():
+        if is_dark:
+            max_text = float(text_L.max())
+            bg_keep = bg_L <= (max_text - min_bt)
+            min_bg = float(bg_L.min())
+            text_keep = text_L >= (min_bg + min_bt)
+        else:
+            min_text = float(text_L.min())
+            bg_keep = bg_L >= (min_text + min_bt)
+            max_bg = float(bg_L.max())
+            text_keep = text_L <= (max_bg - min_bt)
+
+        bg_rows = [r for r, keep in zip(bg_rows, bg_keep) if keep]
+        text_rows = [r for r, keep in zip(text_rows, text_keep) if keep]
+
+        if not bg_rows or not text_rows:
+            continue
+
+        best = None
+        best_score = float("inf")
+
+        for bg in bg_rows:
+            for text in text_rows:
                 bt = (text.L - bg.L) if is_dark else (bg.L - text.L)
                 if bt < min_bt:
                     continue
 
-                for surf in surf_pool.itertuples():
+                for surf in surf_rows:
                     if is_dark:
                         if not (bg.L < surf.L < text.L):
                             continue
@@ -300,7 +337,7 @@ def pick_structural(pool: pd.DataFrame, constraints: dict):
                         if not (bg.L > surf.L > text.L):
                             continue
 
-                    for over in over_pool.itertuples():
+                    for over in over_rows:
                         if is_dark:
                             if not (surf.L < over.L < text.L):
                                 continue

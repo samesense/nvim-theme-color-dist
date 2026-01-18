@@ -1,0 +1,9 @@
+palette=latte
+background: chroma_q25=2.70 q75=17.38 light_q25=30.51 light_q75=93.69 c_pass=970 l_pass=2119 both_pass=754
+surface: chroma_q25=5.99 q75=21.59 light_q25=38.95 light_q75=80.59 c_pass=1034 l_pass=1609 both_pass=579
+overlay: chroma_q25=9.58 q75=26.88 light_q25=56.63 light_q75=72.11 c_pass=1076 l_pass=696 both_pass=247
+text: chroma_q25=13.81 q75=42.14 light_q25=37.59 light_q75=77.76 c_pass=1258 l_pass=1552 both_pass=750
+accent_red: chroma_q25=42.14 light_q10=48.31 light_q90=65.56 h_center=18.3 h_width=90.0 c_pass=503 l_pass=656 h_pass=410 both_pass=24
+accent_warm: chroma_q25=42.14 light_q10=59.10 light_q90=65.04 h_center=84.2 h_width=94.6 c_pass=503 l_pass=246 h_pass=1796 both_pass=62
+accent_cool: chroma_q25=32.45 light_q10=50.52 light_q90=62.41 h_center=252.7 h_width=90.3 c_pass=794 l_pass=437 h_pass=342 both_pass=0
+accent_bridge: chroma_q25=42.14 light_q10=44.79 light_q90=44.79 h_center=310.9 h_width=0.0 c_pass=503 l_pass=0 h_pass=0 both_pass=0

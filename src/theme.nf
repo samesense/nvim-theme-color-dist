@@ -11,6 +11,7 @@ params.interim = "${projectDir}/../data/interim"
 params.end = "${projectDir}/../data/processed"
 params.constraints = "${params.interim}/constraints/palette_constraints.json"
 params.palette = "auto"
+params.debug_log = true
 
 process extract_roles {
     /*
@@ -19,6 +20,7 @@ process extract_roles {
     container 'samesense/nvim-theme-tools:py311'
 
     publishDir "${params.end}/figures/extract", pattern: "*_extract.png", mode: 'copy'
+    publishDir "${params.end}/figures/extract", pattern: "*_extract.log", mode: 'copy'
 
     input:
     tuple val(img), path(png), path(constraints)
@@ -26,13 +28,16 @@ process extract_roles {
     output:
     tuple val(img), path("${img}_colors.csv"), path(constraints), emit: colors
     path("${img}_extract.png"), emit: extract_img
+    path("${img}_extract.log"), optional: true, emit: extract_log
 
     script:
+    def debug_flag = params.debug_log ? "--debug-log ${img}_extract.log" : ""
     """
     extract_colors.py ${png} \\
         --constraints-json ${constraints} \\
         --out-csv ${img}_colors.csv \\
         --out-image ${img}_extract.png \\
+        ${debug_flag} \\
         --palette ${params.palette}
     """
 }

@@ -81,6 +81,11 @@ def deltaE76(lab1: np.ndarray, lab2: np.ndarray) -> float:
     return float(np.sqrt(np.dot(d, d)))
 
 
+def circ_dist_series(series, center: float) -> pd.Series:
+    d = (series - center).abs() % 360
+    return np.minimum(d, 360 - d)
+
+
 # ------------------------------------------------------------
 # Lab/LCh helpers
 # ------------------------------------------------------------
@@ -162,6 +167,50 @@ def dominant_hue_band(
     center = (edges[idx] + edges[idx + 1]) / 2.0
     confidence = float(hist[idx] / hist.sum())
     return float(center), confidence
+
+
+def dominant_hue_from_rgb(
+    rgb_pixels: np.ndarray, *, quant: int, bins: int = 24, weight_chroma: bool = True
+) -> tuple[float | None, float]:
+    if rgb_pixels.size == 0:
+        return None, 0.0
+
+    rgb = (rgb_pixels // quant) * quant
+    rgb = rgb.astype(np.uint8)
+    uniq, counts = np.unique(rgb, axis=0, return_counts=True)
+    lab = rgb2lab(uniq[np.newaxis, :, :] / 255.0)[0]
+    chroma = np.sqrt(lab[:, 1] ** 2 + lab[:, 2] ** 2)
+    hue = np.degrees(np.arctan2(lab[:, 2], lab[:, 1])) % 360.0
+
+    weights = counts.astype(float)
+    if weight_chroma:
+        weights = weights * (chroma + 1.0)
+
+    edges = np.linspace(0, 360, bins + 1)
+    hist, edges = np.histogram(hue, bins=edges, weights=weights)
+    if hist.sum() <= 0:
+        return None, 0.0
+
+    idx = int(hist.argmax())
+    center = (edges[idx] + edges[idx + 1]) / 2.0
+    confidence = float(hist[idx] / hist.sum())
+    return float(center), confidence
+
+
+def dominant_bg_hue_from_image(
+    image_path: Path, *, quant: int
+) -> tuple[float | None, float]:
+    img = Image.open(image_path).convert("RGB")
+    rgb = np.asarray(img).astype(np.float32)
+    gray = rgb[:, :, 0] * 0.299 + rgb[:, :, 1] * 0.587 + rgb[:, :, 2] * 0.114
+    gy, gx = np.gradient(gray)
+    grad = np.hypot(gx, gy)
+    thresh = np.percentile(grad, 35.0)
+    mask = grad <= thresh
+    flat_rgb = rgb[mask]
+    if flat_rgb.shape[0] < 200:
+        return None, 0.0
+    return dominant_hue_from_rgb(flat_rgb, quant=quant, weight_chroma=False)
 
 
 def kmeans_dark_cluster_hue(
@@ -306,6 +355,8 @@ def palette_fit_score(df: pd.DataFrame, constraints_all: dict) -> dict[str, floa
         )
         if missing_structural:
             coverage -= 25.0
+            if role_counts["background"] == 0 or role_counts["text"] == 0:
+                coverage -= 50.0
 
         polarity = constraints_all.get("polarity", {}).get(palette, "dark")
         is_dark = polarity != "light"
@@ -355,11 +406,43 @@ def eligible_roles(row, constraints):
             continue
         c = constraints["chroma"][role]
         Lc = constraints.get("lightness", {}).get(role)
+        L_photo = constraints.get("photo_lightness", {})
+        C_photo = constraints.get("photo_chroma", {})
         if Lc is None:
             if c["q25"] <= chroma <= c["q75"]:
                 roles.append(role)
         else:
-            if c["q25"] <= chroma <= c["q75"] and Lc["q25"] <= L <= Lc["q75"]:
+            L_lo, L_hi = Lc["q25"], Lc["q75"]
+            if L_photo:
+                if role == "background":
+                    L_lo = min(L_lo, L_photo.get("bg_low", L_lo))
+                    L_hi = max(L_hi, L_photo.get("bg_high", L_hi))
+                elif role == "surface":
+                    L_lo = min(L_lo, L_photo.get("surface_low", L_lo))
+                    L_hi = max(L_hi, L_photo.get("surface_high", L_hi))
+                elif role == "overlay":
+                    L_lo = min(L_lo, L_photo.get("overlay_low", L_lo))
+                    L_hi = max(L_hi, L_photo.get("overlay_high", L_hi))
+                elif role == "text":
+                    L_lo = min(L_lo, L_photo.get("text_low", L_lo))
+                    L_hi = max(L_hi, L_photo.get("text_high", L_hi))
+
+            C_lo, C_hi = c["q25"], c["q75"]
+            if C_photo:
+                if role == "background":
+                    C_lo = min(C_lo, C_photo.get("bg_low", C_lo))
+                    C_hi = max(C_hi, C_photo.get("bg_high", C_hi))
+                elif role == "surface":
+                    C_lo = min(C_lo, C_photo.get("surface_low", C_lo))
+                    C_hi = max(C_hi, C_photo.get("surface_high", C_hi))
+                elif role == "overlay":
+                    C_lo = min(C_lo, C_photo.get("overlay_low", C_lo))
+                    C_hi = max(C_hi, C_photo.get("overlay_high", C_hi))
+                elif role == "text":
+                    C_lo = min(C_lo, C_photo.get("text_low", C_lo))
+                    C_hi = max(C_hi, C_photo.get("text_high", C_hi))
+
+            if C_lo <= chroma <= C_hi and L_lo <= L <= L_hi:
                 roles.append(role)
 
     # Accent roles (chroma + hue)
@@ -370,13 +453,22 @@ def eligible_roles(row, constraints):
         c = constraints["chroma"][role]
         h = constraints["hue"][role]
         Lc = constraints.get("lightness", {}).get(role)
+        C_photo = constraints.get("photo_chroma", {})
 
-        if chroma < c["q25"]:
+        c_lo = c["q25"]
+        if C_photo:
+            c_lo = min(c_lo, C_photo.get("text_high", c_lo))
+
+        if chroma < c_lo:
             continue
         if Lc is not None and not (Lc["q10"] <= L <= Lc["q90"]):
             continue
 
-        if circular_distance(hue, h["center"]) <= h["width"] / 2:
+        hw = h["width"]
+        if C_photo and role in ["accent_red", "accent_warm", "accent_cool"]:
+            hw = max(hw, 90.0)
+
+        if circular_distance(hue, h["center"]) <= hw / 2:
             roles.append(role)
 
     return roles
@@ -590,6 +682,12 @@ def save_pool_table_image(pool: pd.DataFrame, out_path: Path, *, max_per_role: i
     type=int,
     help="Number of source colors to sample when nudging missing roles.",
 )
+@click.option(
+    "--debug-log",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Write role filter diagnostics to this log file.",
+)
 def extract_color_pool(
     image_path,
     constraints_json,
@@ -604,6 +702,7 @@ def extract_color_pool(
     cool_soft_min_deltal,
     min_role_candidates,
     nudge_samples,
+    debug_log,
 ):
     """
     Build a role-aware color pool from a photo using learned palette constraints.
@@ -682,12 +781,57 @@ def extract_color_pool(
     dark_hue, dark_hue_conf = dominant_dark_hue(df)
     dark_cluster_hue, dark_cluster_score = kmeans_dark_cluster_hue(df)
 
-    # Background-ish hue from muted midtones (captures cool fields)
+    # Background hue from low-gradient pixels (flat areas)
+    bg_hue, bg_hue_conf = dominant_bg_hue_from_image(image_path, quant=quant)
+
+    # Fallback: muted midtones (captures cool fields if gradient mask fails)
     L_q30 = df["L"].quantile(0.30)
     L_q85 = df["L"].quantile(0.85)
     C_q60 = df["chroma"].quantile(0.60)
     bg_mask = (df["L"] >= L_q30) & (df["L"] <= L_q85) & (df["chroma"] <= C_q60)
-    bg_hue, bg_hue_conf = dominant_hue_band(df, mask=bg_mask, weight_chroma=False)
+    if bg_hue is None or bg_hue_conf <= 0.05:
+        bg_hue, bg_hue_conf = dominant_hue_band(
+            df, mask=bg_mask, weight_chroma=False
+        )
+
+    # Photo-driven lightness bands to keep base/surface/overlay/text usable
+    L_q15 = float(df["L"].quantile(0.15))
+    L_q25 = float(df["L"].quantile(0.25))
+    L_q35 = float(df["L"].quantile(0.35))
+    L_q50 = float(df["L"].quantile(0.50))
+    L_q65 = float(df["L"].quantile(0.65))
+    L_q75 = float(df["L"].quantile(0.75))
+    L_q85 = float(df["L"].quantile(0.85))
+
+    C_q10 = float(df["chroma"].quantile(0.10))
+    C_q20 = float(df["chroma"].quantile(0.20))
+    C_q30 = float(df["chroma"].quantile(0.30))
+    C_q40 = float(df["chroma"].quantile(0.40))
+    C_q50 = float(df["chroma"].quantile(0.50))
+    C_q60 = float(df["chroma"].quantile(0.60))
+    C_q70 = float(df["chroma"].quantile(0.70))
+    C_q80 = float(df["chroma"].quantile(0.80))
+
+    photo_lightness = {
+        "bg_low": L_q15,
+        "bg_high": L_q35,
+        "surface_low": L_q25,
+        "surface_high": L_q50,
+        "overlay_low": L_q50,
+        "overlay_high": L_q75,
+        "text_low": L_q65,
+        "text_high": L_q85,
+    }
+    photo_chroma = {
+        "bg_low": C_q10,
+        "bg_high": C_q40,
+        "surface_low": C_q20,
+        "surface_high": C_q50,
+        "overlay_low": C_q30,
+        "overlay_high": C_q60,
+        "text_low": C_q40,
+        "text_high": C_q80,
+    }
     L_q40 = df["L"].quantile(0.40)
     C_median = df["chroma"].median()
 
@@ -697,6 +841,13 @@ def extract_color_pool(
         (df["hue"] >= 20) & (df["hue"] <= 110) & (df["chroma"] >= max(20.0, C_q75))
     )
     warm_hue, warm_hue_conf = dominant_hue_band(df, mask=warm_mask, weight_chroma=True)
+
+    # --------------------------------------------------------
+    # Photo-driven lightness bands for role eligibility
+    # --------------------------------------------------------
+
+    constraints["photo_lightness"] = photo_lightness
+    constraints["photo_chroma"] = photo_chroma
 
     # --------------------------------------------------------
     # Initial role eligibility + scoring
@@ -719,6 +870,90 @@ def extract_color_pool(
         pool = pd.DataFrame(columns=df.columns.tolist() + ["role", "score"])
     else:
         pool["derived"] = False
+
+    if debug_log is not None:
+        constraints_dbg = constraints
+
+        def count_role(mask):
+            return df[mask].shape[0]
+
+        logs = []
+        logs.append(f"palette={palette}")
+
+        for role in ["background", "surface", "overlay", "text"]:
+            c = constraints_dbg["chroma"][role]
+            l = constraints_dbg.get("lightness", {}).get(role, {})
+            L_photo = constraints_dbg.get("photo_lightness", {})
+            C_photo = constraints_dbg.get("photo_chroma", {})
+            c_lo, c_hi = c["q25"], c["q75"]
+            if C_photo:
+                if role == "background":
+                    c_lo = min(c_lo, C_photo.get("bg_low", c_lo))
+                    c_hi = max(c_hi, C_photo.get("bg_high", c_hi))
+                elif role == "surface":
+                    c_lo = min(c_lo, C_photo.get("surface_low", c_lo))
+                    c_hi = max(c_hi, C_photo.get("surface_high", c_hi))
+                elif role == "overlay":
+                    c_lo = min(c_lo, C_photo.get("overlay_low", c_lo))
+                    c_hi = max(c_hi, C_photo.get("overlay_high", c_hi))
+                elif role == "text":
+                    c_lo = min(c_lo, C_photo.get("text_low", c_lo))
+                    c_hi = max(c_hi, C_photo.get("text_high", c_hi))
+            c_mask = (df["chroma"] >= c_lo) & (df["chroma"] <= c_hi)
+
+            if l:
+                l_lo, l_hi = l["q25"], l["q75"]
+                if L_photo:
+                    if role == "background":
+                        l_lo = min(l_lo, L_photo.get("bg_low", l_lo))
+                        l_hi = max(l_hi, L_photo.get("bg_high", l_hi))
+                    elif role == "surface":
+                        l_lo = min(l_lo, L_photo.get("surface_low", l_lo))
+                        l_hi = max(l_hi, L_photo.get("surface_high", l_hi))
+                    elif role == "overlay":
+                        l_lo = min(l_lo, L_photo.get("overlay_low", l_lo))
+                        l_hi = max(l_hi, L_photo.get("overlay_high", l_hi))
+                    elif role == "text":
+                        l_lo = min(l_lo, L_photo.get("text_low", l_lo))
+                        l_hi = max(l_hi, L_photo.get("text_high", l_hi))
+                l_mask = (df["L"] >= l_lo) & (df["L"] <= l_hi)
+            else:
+                l_lo, l_hi = float("nan"), float("nan")
+                l_mask = pd.Series([True] * len(df))
+            logs.append(
+                f"{role}: chroma_q25={c_lo:.2f} q75={c_hi:.2f} "
+                f"light_q25={l_lo:.2f} light_q75={l_hi:.2f} "
+                f"c_pass={count_role(c_mask)} l_pass={count_role(l_mask)} "
+                f"both_pass={count_role(c_mask & l_mask)}"
+            )
+
+        for role in ["accent_red", "accent_warm", "accent_cool", "accent_bridge"]:
+            c = constraints_dbg["chroma"][role]
+            h = constraints_dbg["hue"][role]
+            l = constraints_dbg.get("lightness", {}).get(role, {})
+            C_photo = constraints_dbg.get("photo_chroma", {})
+            c_lo = c["q25"]
+            if C_photo:
+                c_lo = min(c_lo, C_photo.get("text_high", c_lo))
+            c_mask = df["chroma"] >= c_lo
+            if l:
+                l_mask = (df["L"] >= l["q10"]) & (df["L"] <= l["q90"])
+            else:
+                l_mask = pd.Series([True] * len(df))
+            h_width = h["width"]
+            if C_photo and role in ["accent_red", "accent_warm", "accent_cool"]:
+                h_width = max(h_width, 90.0)
+            h_mask = circ_dist_series(df["hue"], h["center"]) <= (h_width / 2.0)
+            logs.append(
+                f"{role}: chroma_q25={c_lo:.2f} "
+                f"light_q10={l.get('q10', float('nan')):.2f} "
+                f"light_q90={l.get('q90', float('nan')):.2f} "
+                f"h_center={h['center']:.1f} h_width={h_width:.1f} "
+                f"c_pass={count_role(c_mask)} l_pass={count_role(l_mask)} "
+                f"h_pass={count_role(h_mask)} both_pass={count_role(c_mask & l_mask & h_mask)}"
+            )
+
+        debug_log.write_text("\n".join(logs) + "\n")
 
     # --------------------------------------------------------
     # Nudge missing roles to ensure candidate coverage
@@ -905,6 +1140,29 @@ def extract_color_pool(
     pool["photo_C_median"] = float(C_median)
     pool["photo_warm_hue"] = warm_hue
     pool["photo_warm_hue_conf"] = warm_hue_conf
+    pool["photo_L_q15"] = float(L_q15)
+    pool["photo_L_q25"] = float(L_q25)
+    pool["photo_L_q35"] = float(L_q35)
+    pool["photo_L_q50"] = float(L_q50)
+    pool["photo_L_q65"] = float(L_q65)
+    pool["photo_L_q75"] = float(L_q75)
+    pool["photo_L_q85"] = float(L_q85)
+    pool["photo_lightness_bg_low"] = float(photo_lightness["bg_low"])
+    pool["photo_lightness_bg_high"] = float(photo_lightness["bg_high"])
+    pool["photo_lightness_surface_low"] = float(photo_lightness["surface_low"])
+    pool["photo_lightness_surface_high"] = float(photo_lightness["surface_high"])
+    pool["photo_lightness_overlay_low"] = float(photo_lightness["overlay_low"])
+    pool["photo_lightness_overlay_high"] = float(photo_lightness["overlay_high"])
+    pool["photo_lightness_text_low"] = float(photo_lightness["text_low"])
+    pool["photo_lightness_text_high"] = float(photo_lightness["text_high"])
+    pool["photo_chroma_bg_low"] = float(photo_chroma["bg_low"])
+    pool["photo_chroma_bg_high"] = float(photo_chroma["bg_high"])
+    pool["photo_chroma_surface_low"] = float(photo_chroma["surface_low"])
+    pool["photo_chroma_surface_high"] = float(photo_chroma["surface_high"])
+    pool["photo_chroma_overlay_low"] = float(photo_chroma["overlay_low"])
+    pool["photo_chroma_overlay_high"] = float(photo_chroma["overlay_high"])
+    pool["photo_chroma_text_low"] = float(photo_chroma["text_low"])
+    pool["photo_chroma_text_high"] = float(photo_chroma["text_high"])
 
     pool = add_ranks(pool)
 
