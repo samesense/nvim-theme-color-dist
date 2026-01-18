@@ -69,6 +69,11 @@ def circ_dist(a, b) -> float:
     return min(d, 360 - d)
 
 
+def circ_dist_series(series, center: float) -> pd.Series:
+    d = (series - center).abs() % 360
+    return np.minimum(d, 360 - d)
+
+
 def pool_add_hex_and_dedupe(pool: pd.DataFrame) -> pd.DataFrame:
     """
     Normalize and dedupe the pool by hex so we don't accidentally select
@@ -139,6 +144,80 @@ def hue_width(constraints, role):
     return constraints["hue"].get(role, {}).get("width")
 
 
+def chroma_bounds(constraints, role, *, relax: bool):
+    c = constraints["chroma"].get(role)
+    if c is None:
+        return None
+    q25 = float(c["q25"])
+    q75 = float(c["q75"])
+    if relax:
+        relax_delta = float(c.get("relax_delta", (float(c["q90"]) - float(c["q10"])) / 2))
+        q25 = max(0.0, q25 - relax_delta)
+        q75 = q75 + relax_delta
+    return q25, q75
+
+
+def lightness_bounds(constraints, role, *, relax: bool):
+    l = constraints.get("lightness", {}).get(role)
+    if l is None:
+        return None
+    q25 = float(l["q25"])
+    q75 = float(l["q75"])
+    if relax:
+        relax_delta = float(l.get("relax_delta", (float(l["q90"]) - float(l["q10"])) / 2))
+        q25 = max(0.0, q25 - relax_delta)
+        q75 = min(100.0, q75 + relax_delta)
+    return q25, q75
+
+
+def hue_window(constraints, role, *, relax: bool):
+    h = constraints["hue"].get(role)
+    if h is None:
+        return None
+    center = float(h["center"])
+    width = float(h["width"])
+    mult = float(h.get("relax_mult", 1.3)) if relax else 1.0
+    return center, (width / 2.0) * mult
+
+
+def get_role_pool(pool: pd.DataFrame, role: str, constraints: dict, *, relax: bool):
+    sub = pool[pool.role == role].copy()
+    if not sub.empty and not relax:
+        return sub
+
+    cand = pool.copy()
+
+    if role in ["background", "surface", "overlay", "text"]:
+        cb = chroma_bounds(constraints, role, relax=relax)
+        if cb is not None:
+            c_lo, c_hi = cb
+            cand = cand[(cand["chroma"] >= c_lo) & (cand["chroma"] <= c_hi)]
+
+        lb = lightness_bounds(constraints, role, relax=relax)
+        if lb is not None:
+            l_lo, l_hi = lb
+            cand = cand[(cand["L"] >= l_lo) & (cand["L"] <= l_hi)]
+
+        return cand if not cand.empty else sub
+
+    cb = chroma_bounds(constraints, role, relax=relax)
+    if cb is not None:
+        c_lo, _ = cb
+        cand = cand[cand["chroma"] >= c_lo]
+
+    hw = hue_window(constraints, role, relax=relax)
+    if hw is not None:
+        center, half = hw
+        cand = cand[circ_dist_series(cand["hue"], center) <= half]
+
+    lb = lightness_bounds(constraints, role, relax=relax)
+    if lb is not None:
+        l_lo, l_hi = lb
+        cand = cand[(cand["L"] >= l_lo) & (cand["L"] <= l_hi)]
+
+    return cand if not cand.empty else sub
+
+
 # ============================================================
 # Structural selection (required)
 # ============================================================
@@ -147,65 +226,106 @@ def hue_width(constraints, role):
 def pick_structural(pool: pd.DataFrame, constraints: dict):
     polarity = constraints.get("polarity", "dark")
     is_dark = polarity != "light"
+    pref_hue = constraints.get("photo_dark_hue")
+    pref_hue_conf = float(constraints.get("photo_dark_hue_conf") or 0.0)
+    cluster_hue = constraints.get("photo_dark_cluster_hue")
+    cluster_score = float(constraints.get("photo_dark_cluster_score") or 0.0)
+    bg_photo_hue = constraints.get("photo_bg_hue")
+    bg_photo_conf = float(constraints.get("photo_bg_hue_conf") or 0.0)
+    bg_hue = constraints.get("background_hue", {})
+    bg_width = float(bg_hue.get("width", 60.0))
 
-    bg_pool = pool[pool.role == "background"].sort_values("L", ascending=is_dark)
-    surf_pool = pool[pool.role == "surface"].sort_values("L", ascending=is_dark)
-    over_pool = pool[pool.role == "overlay"].sort_values("L", ascending=is_dark)
-    text_pool = pool[pool.role == "text"].sort_values("L", ascending=not is_dark)
+    desired_hue = None
+    hue_weight = 0.0
+    if bg_photo_hue is not None and bg_photo_conf > 0.05:
+        desired_hue = float(bg_photo_hue)
+        hue_weight = 0.10 + 0.25 * min(1.0, bg_photo_conf * 2.0)
+    if pref_hue is not None and pref_hue_conf > 0.05:
+        if desired_hue is None or pref_hue_conf > (bg_photo_conf + 0.05):
+            desired_hue = float(pref_hue)
+            hue_weight = 0.10 + 0.25 * min(1.0, pref_hue_conf * 2.0)
+    if cluster_hue is not None and cluster_score > 0.0:
+        if desired_hue is None or cluster_score > (pref_hue_conf * 2.0):
+            desired_hue = float(cluster_hue)
+            hue_weight = max(hue_weight, 0.15)
 
-    best = None
-    best_score = float("inf")
+    hue_weight *= min(1.0, max(0.3, bg_width / 90.0))
 
-    for bg in bg_pool.head(40).itertuples():
-        for text in text_pool.head(40).itertuples():
-            bt = (text.L - bg.L) if is_dark else (bg.L - text.L)
-            if bt < deltaL_min(constraints, "background→text"):
-                continue
+    for relax in [False, True]:
+        bg_pool = get_role_pool(pool, "background", constraints, relax=relax).sort_values(
+            "L", ascending=is_dark
+        )
+        surf_pool = get_role_pool(pool, "surface", constraints, relax=relax).sort_values(
+            "L", ascending=is_dark
+        )
+        over_pool = get_role_pool(pool, "overlay", constraints, relax=relax).sort_values(
+            "L", ascending=is_dark
+        )
+        text_pool = get_role_pool(pool, "text", constraints, relax=relax).sort_values(
+            "L", ascending=not is_dark
+        )
 
-            for surf in surf_pool.itertuples():
-                if is_dark:
-                    if not (bg.L < surf.L < text.L):
-                        continue
-                else:
-                    if not (bg.L > surf.L > text.L):
-                        continue
+        best = None
+        best_score = float("inf")
 
-                for over in over_pool.itertuples():
+        min_mult = 0.6 if relax else 1.0
+        min_bt = deltaL_min(constraints, "background→text") * min_mult
+
+        for bg in bg_pool.head(40).itertuples():
+            for text in text_pool.head(40).itertuples():
+                bt = (text.L - bg.L) if is_dark else (bg.L - text.L)
+                if bt < min_bt:
+                    continue
+
+                for surf in surf_pool.itertuples():
                     if is_dark:
-                        if not (surf.L < over.L < text.L):
+                        if not (bg.L < surf.L < text.L):
                             continue
                     else:
-                        if not (surf.L > over.L > text.L):
+                        if not (bg.L > surf.L > text.L):
                             continue
 
-                    bs = (surf.L - bg.L) if is_dark else (bg.L - surf.L)
-                    so = (over.L - surf.L) if is_dark else (surf.L - over.L)
-                    ot = (text.L - over.L) if is_dark else (over.L - text.L)
+                    for over in over_pool.itertuples():
+                        if is_dark:
+                            if not (surf.L < over.L < text.L):
+                                continue
+                        else:
+                            if not (surf.L > over.L > text.L):
+                                continue
 
-                    score = (
-                        abs(bt - deltaL_target(constraints, "background→text"))
-                        + abs(bs - deltaL_target(constraints, "background→surface"))
-                        + abs(so - deltaL_target(constraints, "surface→overlay"))
-                        + abs(ot - deltaL_target(constraints, "overlay→text"))
-                        - 2.0
-                        * (
-                            float(getattr(bg, "frequency", 0.0))
-                            + float(getattr(surf, "frequency", 0.0))
-                            + float(getattr(over, "frequency", 0.0))
-                            + float(getattr(text, "frequency", 0.0))
+                        bs = (surf.L - bg.L) if is_dark else (bg.L - surf.L)
+                        so = (over.L - surf.L) if is_dark else (surf.L - over.L)
+                        ot = (text.L - over.L) if is_dark else (over.L - text.L)
+
+                        score = (
+                            abs(bt - deltaL_target(constraints, "background→text"))
+                            + abs(bs - deltaL_target(constraints, "background→surface"))
+                            + abs(so - deltaL_target(constraints, "surface→overlay"))
+                            + abs(ot - deltaL_target(constraints, "overlay→text"))
+                            - 2.0
+                            * (
+                                float(getattr(bg, "frequency", 0.0))
+                                + float(getattr(surf, "frequency", 0.0))
+                                + float(getattr(over, "frequency", 0.0))
+                                + float(getattr(text, "frequency", 0.0))
+                            )
                         )
-                    )
+                        if desired_hue is not None and hue_weight > 0.0:
+                            score += circ_dist(float(bg.hue), desired_hue) * hue_weight
 
-                    if score < best_score:
-                        best_score = score
-                        best = {
-                            "base": bg,
-                            "surface1": surf,
-                            "overlay1": over,
-                            "text": text,
-                        }
+                        if score < best_score:
+                            best_score = score
+                            best = {
+                                "base": bg,
+                                "surface1": surf,
+                                "overlay1": over,
+                                "text": text,
+                            }
 
-    return best or {}
+        if best:
+            return best
+
+    return {}
 
 
 # ============================================================
@@ -226,6 +346,9 @@ def fill_ui(pool, assignments, constraints):
 
     def pick(role, target_L):
         sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
+        if sub.empty:
+            sub = get_role_pool(pool, role, constraints, relax=True)
+            sub = sub[~sub.hex.isin(used)].copy()
         if sub.empty:
             return None
         sub["dist"] = (sub.L - target_L).abs()
@@ -336,10 +459,15 @@ def pick_accents(
     base_L = float(base.L) if base is not None else None
     is_dark = base_L is not None and base_L < 50.0
     polarity = "dark" if is_dark else "light"
+    warm_hue = constraints.get("photo_warm_hue")
+    warm_hue_conf = float(constraints.get("photo_warm_hue_conf") or 0.0)
 
     for role in ACCENT_ROLES:
         elems = ELEMENTS_BY_ROLE[role]
         sub = pool[(pool.role == role) & (~pool.hex.isin(used))].copy()
+        if sub.empty:
+            sub = get_role_pool(pool, role, constraints, relax=True)
+            sub = sub[~sub.hex.isin(used)].copy()
         if sub.empty:
             continue
 
@@ -425,14 +553,28 @@ def pick_accents(
                 )
         else:
             if have_ranks:
-                cand = cand.sort_values(
-                    ["deltaE_bg_rank", "abs_deltaL_bg_rank", "score", "frequency"],
-                    ascending=[False, False, False, False],
-                )
+                if role == "accent_warm" and warm_hue is not None and warm_hue_conf > 0.05:
+                    cand["warm_dist"] = cand.hue.apply(lambda h: circ_dist(h, warm_hue))
+                    cand = cand.sort_values(
+                        ["warm_dist", "deltaE_bg_rank", "abs_deltaL_bg_rank", "score", "frequency"],
+                        ascending=[True, False, False, False, False],
+                    )
+                else:
+                    cand = cand.sort_values(
+                        ["deltaE_bg_rank", "abs_deltaL_bg_rank", "score", "frequency"],
+                        ascending=[False, False, False, False],
+                    )
             else:
-                cand = cand.sort_values(
-                    ["frequency", "score"], ascending=[False, False]
-                )
+                if role == "accent_warm" and warm_hue is not None and warm_hue_conf > 0.05:
+                    cand["warm_dist"] = cand.hue.apply(lambda h: circ_dist(h, warm_hue))
+                    cand = cand.sort_values(
+                        ["warm_dist", "score", "frequency"],
+                        ascending=[True, False, False],
+                    )
+                else:
+                    cand = cand.sort_values(
+                        ["frequency", "score"], ascending=[False, False]
+                    )
 
         # Assign unique colors per element
         for elem in elems:
@@ -615,7 +757,13 @@ def main(
         "deltaL": constraints_all["constraints"]["deltaL"][palette],
         "chroma": constraints_all["constraints"]["chroma"][palette],
         "hue": constraints_all["constraints"]["hue"][palette],
+        "lightness": constraints_all["constraints"].get("lightness", {}).get(
+            palette, {}
+        ),
         "polarity": constraints_all.get("polarity", {}).get(palette, "dark"),
+        "background_hue": constraints_all["constraints"]
+        .get("background_hue", {})
+        .get(palette, {}),
         "element_offsets": constraints_all["constraints"]
         .get("element_offsets", {})
         .get(palette, {}),
@@ -623,6 +771,30 @@ def main(
             "accent_separation", {}
         ),
     }
+
+    if "photo_dark_hue" in pool.columns:
+        constraints["photo_dark_hue"] = pool["photo_dark_hue"].dropna().iloc[0]
+        constraints["photo_dark_hue_conf"] = (
+            pool.get("photo_dark_hue_conf", pd.Series([0.0])).dropna().iloc[0]
+        )
+        constraints["photo_dark_cluster_hue"] = (
+            pool.get("photo_dark_cluster_hue", pd.Series([np.nan])).dropna().iloc[0]
+        )
+        constraints["photo_dark_cluster_score"] = (
+            pool.get("photo_dark_cluster_score", pd.Series([0.0])).dropna().iloc[0]
+        )
+        constraints["photo_bg_hue"] = (
+            pool.get("photo_bg_hue", pd.Series([np.nan])).dropna().iloc[0]
+        )
+        constraints["photo_bg_hue_conf"] = (
+            pool.get("photo_bg_hue_conf", pd.Series([0.0])).dropna().iloc[0]
+        )
+        constraints["photo_warm_hue"] = (
+            pool.get("photo_warm_hue", pd.Series([np.nan])).dropna().iloc[0]
+        )
+        constraints["photo_warm_hue_conf"] = (
+            pool.get("photo_warm_hue_conf", pd.Series([0.0])).dropna().iloc[0]
+        )
 
     assignments = pick_structural(pool, constraints)
     assignments = fill_ui(pool, assignments, constraints)

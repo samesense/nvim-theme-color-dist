@@ -18,17 +18,21 @@ process extract_roles {
      */
     container 'samesense/nvim-theme-tools:py311'
 
+    publishDir "${params.end}/figures/extract", pattern: "*_extract.png", mode: 'copy'
+
     input:
     tuple val(img), path(png), path(constraints)
 
     output:
-    tuple val(img), path("${img}_colors.csv"), path(constraints)
+    tuple val(img), path("${img}_colors.csv"), path(constraints), emit: colors
+    path("${img}_extract.png"), emit: extract_img
 
     script:
     """
     extract_colors.py ${png} \\
         --constraints-json ${constraints} \\
         --out-csv ${img}_colors.csv \\
+        --out-image ${img}_extract.png \\
         --palette ${params.palette}
     """
 }
@@ -108,6 +112,7 @@ workflow {
 
     // Run pipeline
     extract_roles(img_ch)
+    extract_roles.out.colors
     | assign_elements
     | fill_elements
 }

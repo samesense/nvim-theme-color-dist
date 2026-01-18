@@ -216,7 +216,22 @@ def build_constraints(
         }
 
     # --------------------------------------------------------
-    # 5. Chroma constraints (palette + role)
+    # 5. Background hue spread (palette scoped)
+    # --------------------------------------------------------
+
+    background_hue = {}
+    bg_roles = cap_role[cap_role["role"] == "background"].copy()
+    for palette, sub in bg_roles.groupby("palette"):
+        hues = np.degrees(np.arctan2(sub["b"], sub["a"])) % 360
+        center = circular_mean_deg(hues)
+        width = circular_width_deg(hues, center)
+        background_hue[palette] = {
+            "center": float(center),
+            "width": float(width),
+        }
+
+    # --------------------------------------------------------
+    # 6. Chroma constraints (palette + role)
     # --------------------------------------------------------
 
     chroma_constraints = {}
@@ -239,7 +254,7 @@ def build_constraints(
         }
 
     # --------------------------------------------------------
-    # 6. Hue constraints (palette + role, circular)
+    # 7. Hue constraints (palette + role, circular)
     # --------------------------------------------------------
 
     hue_constraints = {}
@@ -256,7 +271,7 @@ def build_constraints(
         }
 
     # --------------------------------------------------------
-    # 7. Element offsets (palette + role + offset_name)
+    # 8. Element offsets (palette + role + offset_name)
     # --------------------------------------------------------
 
     element_offset_constraints = {}
@@ -272,7 +287,7 @@ def build_constraints(
             }
 
     # --------------------------------------------------------
-    # 8. Accent separation (polarity + role)
+    # 9. Accent separation (polarity + role)
     # --------------------------------------------------------
 
     accent_sep_constraints = {}
@@ -299,6 +314,7 @@ def build_constraints(
         "constraints": {
             "deltaL": deltaL_constraints,
             "lightness": lightness_constraints,
+            "background_hue": background_hue,
             "chroma": chroma_constraints,
             "hue": hue_constraints,
             "element_offsets": element_offset_constraints,
